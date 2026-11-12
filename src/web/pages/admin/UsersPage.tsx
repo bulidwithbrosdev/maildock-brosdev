@@ -699,7 +699,7 @@ function CreateUserDialog({
   const [domainId, setDomainId] = useState<number | ''>('');
   const [email, setEmail] = useState('');
   const [alternateEmail, setAlternateEmail] = useState('');
-  const [authMethod, setAuthMethod] = useState<'invite' | 'manual'>('invite');
+  const [authMethod, setAuthMethod] = useState<'invite' | 'manual'>('manual');
   const [manualPassword, setManualPassword] = useState('');
   const [storageQuota, setStorageQuota] = useState('');
   const [shared, setShared] = useState<number[]>([]);
@@ -829,14 +829,14 @@ function CreateUserDialog({
             onChange={setAuthMethod}
             options={[
               {
-                value: 'invite',
-                label: 'Email invitation link (Recommended)',
-                hint: 'Sends a secure, single-use password setup link to their alternate email.',
-              },
-              {
                 value: 'manual',
                 label: 'Manual temporary password',
                 hint: 'Set or auto-generate a temporary password to share manually.',
+              },
+              {
+                value: 'invite',
+                label: 'Email invitation link',
+                hint: 'Sends a secure, single-use password setup link to their alternate email.',
               },
             ]}
           />
