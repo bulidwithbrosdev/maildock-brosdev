@@ -230,41 +230,58 @@ admin.get('/domains', async (c) => {
     updated_at?: number | null;
   }>(
     c.env.DB,
-    'SELECT * FROM domains ORDER BY (kind IS NOT NULL AND kind != \'root\') ASC, name',
+    'SELECT * FROM domains ORDER BY name',
   );
+  rows.sort((a, b) => {
+    const aSub = (a.kind && a.kind !== 'root') || !!a.parent_domain_id ? 1 : 0;
+    const bSub = (b.kind && b.kind !== 'root') || !!b.parent_domain_id ? 1 : 0;
+    if (aSub !== bSub) return aSub - bSub;
+    return a.name.localeCompare(b.name);
+  });
   const counts = await all<{ domain_id: number; n: number }>(c.env.DB, 'SELECT domain_id, COUNT(*) AS n FROM addresses GROUP BY domain_id');
   const logos = new Map((await all<{ domain_id: number; updated_at: number }>(c.env.DB, 'SELECT domain_id, updated_at FROM sender_logos')).map((l) => [l.domain_id, l.updated_at]));
   const domainMap = new Map(rows.map((r) => [r.id, r.name]));
 
   return c.json(
-    rows.map((d) => ({
-      id: d.id,
-      name: d.name,
-      zoneId: d.zone_id,
-      status: d.status,
-      parentDomainId: d.parent_domain_id ?? null,
-      parentDomainName: d.parent_domain_id ? domainMap.get(d.parent_domain_id) ?? null : null,
-      kind: d.kind || (d.parent_domain_id ? 'subdomain' : 'root'),
-      provisioningStatus: d.provisioning_status || 'completed',
-      provisioningLogs: parseJson(d.provisioning_logs, []),
-      dnsStatus: d.dns_status || (d.status === 'active' ? 'verified' : 'pending'),
-      receivingStatus: d.receiving_status || (d.status === 'active' ? 'ready' : 'pending'),
-      sendingStatus: d.sending_status || (d.status === 'active' ? 'ready' : 'pending'),
-      spfStatus: d.spf_status || (d.status === 'active' ? 'pass' : 'pending'),
-      dkimStatus: d.dkim_status || (d.status === 'active' ? 'pass' : 'pending'),
-      dmarcStatus: d.dmarc_status || (d.status === 'active' ? 'pass' : 'pending'),
-      workerConfigured: !!d.worker_configured,
-      catchAllMailboxId: d.catch_all_mailbox_id,
-      providerId: d.provider_id,
-      appHostname: d.app_hostname,
-      logoUpdatedAt: logos.get(d.id) ?? null,
-      addresses: counts.find((x) => x.domain_id === d.id)?.n ?? 0,
-      health: d.health_checked_at ? parseJson(d.health, null) : null,
-      healthCheckedAt: d.health_checked_at,
-      setup: domainStatePayload(d as never),
-      createdAt: d.created_at,
-      updatedAt: d.updated_at ?? null,
-    })),
+    rows.map((d) => {
+      let setup;
+      try {
+        setup = domainStatePayload(d as never);
+      } catch {
+        setup = { steps: [], done: d.status === 'active' };
+      }
+      const rawHealth = d.health_checked_at && d.health ? parseJson<{ items?: unknown[]; conflicts?: unknown[]; checkedAt?: number } | null>(d.health, null) : null;
+      const health = rawHealth ? { items: Array.isArray(rawHealth.items) ? rawHealth.items : [], conflicts: Array.isArray(rawHealth.conflicts) ? rawHealth.conflicts : [], checkedAt: rawHealth.checkedAt ?? d.health_checked_at ?? Date.now() } : null;
+
+      return {
+        id: d.id,
+        name: d.name,
+        zoneId: d.zone_id,
+        status: d.status,
+        parentDomainId: d.parent_domain_id ?? null,
+        parentDomainName: d.parent_domain_id ? domainMap.get(d.parent_domain_id) ?? null : null,
+        kind: d.kind || (d.parent_domain_id ? 'subdomain' : 'root'),
+        provisioningStatus: d.provisioning_status || 'completed',
+        provisioningLogs: parseJson(d.provisioning_logs, []),
+        dnsStatus: d.dns_status || (d.status === 'active' ? 'verified' : 'pending'),
+        receivingStatus: d.receiving_status || (d.status === 'active' ? 'ready' : 'pending'),
+        sendingStatus: d.sending_status || (d.status === 'active' ? 'ready' : 'pending'),
+        spfStatus: d.spf_status || (d.status === 'active' ? 'pass' : 'pending'),
+        dkimStatus: d.dkim_status || (d.status === 'active' ? 'pass' : 'pending'),
+        dmarcStatus: d.dmarc_status || (d.status === 'active' ? 'pass' : 'pending'),
+        workerConfigured: !!d.worker_configured,
+        catchAllMailboxId: d.catch_all_mailbox_id,
+        providerId: d.provider_id,
+        appHostname: d.app_hostname,
+        logoUpdatedAt: logos.get(d.id) ?? null,
+        addresses: counts.find((x) => x.domain_id === d.id)?.n ?? 0,
+        health,
+        healthCheckedAt: d.health_checked_at,
+        setup,
+        createdAt: d.created_at,
+        updatedAt: d.updated_at ?? null,
+      };
+    }),
   );
 });
 

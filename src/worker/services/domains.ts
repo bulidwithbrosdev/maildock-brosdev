@@ -148,11 +148,20 @@ export async function createDomain(db: D1Database, zone: { id: string; name: str
   return getDomain(db, id);
 }
 
-export function domainStatePayload(d: DomainRow) {
-  const state = parseJson<SetupState>(d.setup_state, { steps: {} });
+export function parseSetupState(raw: string | null | undefined): SetupState {
+  const parsed = parseJson<SetupState>(raw, { steps: {} });
   return {
-    steps: DOMAIN_STEPS.map((s) => ({ id: s.id, label: s.label, ...(state.steps[s.id] ?? { status: 'pending' as const }) })),
-    done: DOMAIN_STEPS.every((s) => state.steps[s.id]?.status === 'done' || state.steps[s.id]?.status === 'skipped'),
+    replaceMx: !!parsed?.replaceMx,
+    steps: parsed && typeof parsed === 'object' && parsed.steps && typeof parsed.steps === 'object' ? parsed.steps : {},
+  };
+}
+
+export function domainStatePayload(d: DomainRow) {
+  const state = parseSetupState(d.setup_state);
+  const steps = state.steps ?? {};
+  return {
+    steps: DOMAIN_STEPS.map((s) => ({ id: s.id, label: s.label, ...(steps[s.id] ?? { status: 'pending' as const }) })),
+    done: DOMAIN_STEPS.every((s) => steps[s.id]?.status === 'done' || steps[s.id]?.status === 'skipped'),
   };
 }
 
@@ -222,8 +231,9 @@ export async function runDomainStep(env: Env, settings: AppSettings, domainId: n
   const cf = await requireCf(env, settings);
   const { workerName } = requireWorker(settings);
   let d = await getDomain(env.DB, domainId);
-  const state = parseJson<SetupState>(d.setup_state, { steps: {} });
-  const step = stepId ?? DOMAIN_STEPS.find((s) => state.steps[s.id]?.status !== 'done' && state.steps[s.id]?.status !== 'skipped')?.id;
+  const state = parseSetupState(d.setup_state);
+  const steps = state.steps ?? {};
+  const step = stepId ?? DOMAIN_STEPS.find((s) => steps[s.id]?.status !== 'done' && steps[s.id]?.status !== 'skipped')?.id;
   if (!step) return { domain: d, ...domainStatePayload(d) };
   try {
     let message: string;
@@ -231,8 +241,8 @@ export async function runDomainStep(env: Env, settings: AppSettings, domainId: n
     else if (step === 'catchall') message = await stepCatchAll(cf, d, workerName);
     else if (step === 'dmarc') message = await stepDmarc(cf, d);
     else message = await stepVerify(cf, d, workerName);
-    state.steps[step] = { status: 'done', message, at: Date.now() };
-    const allDone = DOMAIN_STEPS.every((s) => state.steps[s.id]?.status === 'done' || state.steps[s.id]?.status === 'skipped');
+    steps[step] = { status: 'done', message, at: Date.now() };
+    const allDone = DOMAIN_STEPS.every((s) => steps[s.id]?.status === 'done' || steps[s.id]?.status === 'skipped');
     await saveState(env.DB, d, state, allDone ? 'active' : undefined);
   } catch (e) {
     const message =
@@ -241,7 +251,7 @@ export async function runDomainStep(env: Env, settings: AppSettings, domainId: n
         : e instanceof Error
           ? e.message
           : String(e);
-    state.steps[step] = { status: 'error', message, at: Date.now() };
+    steps[step] = { status: 'error', message, at: Date.now() };
     await saveState(env.DB, d, state, 'error');
     if (e instanceof HttpError && e.code === 'mx_conflict') throw e;
   }
@@ -251,7 +261,7 @@ export async function runDomainStep(env: Env, settings: AppSettings, domainId: n
 
 export async function resetDomainSteps(db: D1Database, domainId: number, replaceMx?: boolean): Promise<void> {
   const d = await getDomain(db, domainId);
-  const state = parseJson<SetupState>(d.setup_state, { steps: {} });
+  const state = parseSetupState(d.setup_state);
   state.steps = {};
   if (replaceMx !== undefined) state.replaceMx = replaceMx;
   await saveState(db, d, state);

@@ -18,7 +18,8 @@
     {
       "binding": "DB",
       "database_name": "maildock",
-      "migrations_dir": "src/worker/db/migrations","database_id": "2d064e3e-07de-45de-a2ab-cd9e82a051d2"
+      "migrations_dir": "src/worker/db/migrations",
+      "database_id": "2d064e3e-07de-45de-a2ab-cd9e82a051d2"
     }
   ],
   // There is deliberately no R2 binding: R2 on a new account needs a payment method, and an R2

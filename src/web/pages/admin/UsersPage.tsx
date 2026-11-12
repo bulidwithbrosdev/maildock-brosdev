@@ -795,6 +795,11 @@ function CreateUserDialog({
             <Field label="Business mailbox address" id="local">
               <AddressInput id="local" local={localPart} onLocal={setLocalPart} domainId={domain?.id} onDomain={setDomainId} domains={domainList} placeholder={suggested || 'jane'} />
             </Field>
+            {domainList.length === 0 && (
+              <div className="rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning">
+                No domains configured yet. Go to <Link to="/admin/domains" className="font-semibold underline">Settings → Domains</Link> to add your domain first.
+              </div>
+            )}
             {mailboxPreview && (
               <div className="text-xs text-muted">
                 Mailbox: <span className="font-mono font-medium text-fg">{mailboxPreview}</span>

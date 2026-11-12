@@ -257,7 +257,7 @@ function DomainCard({
   const [removing, setRemoving] = useState(false);
   const [showHealth, setShowHealth] = useState(false);
   const health = d.health;
-  const shownSteps = steps ?? d.setup.steps;
+  const shownSteps = steps ?? d.setup?.steps ?? [];
 
   const finish = async () => {
     setRunning(true);
@@ -274,9 +274,9 @@ function DomainCard({
   const sending = providers.flatMap((p) => p.domains.filter((x) => x.domainId === d.id));
   const noDomainApi = providers.some((p) => !PROVIDER_INFO[p.type].hasDomainApi);
   const sendState = sending.some((x) => x.status === 'verified') ? 'ok' : sending.some((x) => x.status === 'pending') ? 'pending' : noDomainApi ? 'ok' : 'off';
-  const issues = health?.items.filter((h) => h.status !== 'ok') ?? [];
+  const issues = Array.isArray(health?.items) ? health.items.filter((h) => h.status !== 'ok') : [];
   const errors = issues.filter((h) => h.status === 'error');
-  const tone = d.status === 'error' || errors.length ? 'danger' : !d.setup.done || d.status === 'pending' || issues.length ? 'warning' : d.status === 'active' ? 'success' : 'neutral';
+  const tone = d.status === 'error' || errors.length ? 'danger' : !d.setup?.done || d.status === 'pending' || issues.length ? 'warning' : d.status === 'active' ? 'success' : 'neutral';
 
   const isSubdomain = d.kind === 'subdomain';
 

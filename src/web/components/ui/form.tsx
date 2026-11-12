@@ -91,16 +91,22 @@ export function AddressInput({
     <div className="flex h-9 overflow-hidden rounded-lg border border-border bg-surface text-[13px] transition-colors focus-within:border-primary focus-within:ring-3 focus-within:ring-[var(--ring)]">
       <input id={id} value={local} onChange={(e) => onLocal(e.target.value.trim())} placeholder={placeholder} autoFocus={autoFocus} className="min-w-0 flex-1 bg-transparent px-3 outline-none placeholder:text-faint" />
       <select
-        value={domainId ?? ''}
+        value={domainId ?? domains[0]?.id ?? ''}
         onChange={(e) => onDomain(Number(e.target.value))}
         aria-label="Domain"
         className="select-chevron max-w-[55%] border-l border-border bg-surface-2 pr-8 pl-2.5 text-muted outline-none"
       >
-        {domains.map((d) => (
-          <option key={d.id} value={d.id}>
-            @{d.name}
+        {domains.length === 0 ? (
+          <option value="" disabled>
+            No domains
           </option>
-        ))}
+        ) : (
+          domains.map((d) => (
+            <option key={d.id} value={d.id}>
+              @{d.name}
+            </option>
+          ))
+        )}
       </select>
     </div>
   );
