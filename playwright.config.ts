@@ -18,7 +18,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'node test/mock/server.ts',
-      url: 'http://127.0.0.1:8790/github/repos/x/y/releases/latest',
+      url: 'http://127.0.0.1:8790/__mock/state',
       reuseExistingServer: true,
       timeout: 30_000,
     },

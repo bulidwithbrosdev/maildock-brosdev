@@ -19,6 +19,10 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(state));
     return;
   }
+  if (req.url?.startsWith('/github/')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, tag_name: 'v1.0.0' }));
+    return;
+  }
   const request = new Request(url, {
     method: req.method,
     headers: Object.entries(req.headers).flatMap(([k, v]) => (Array.isArray(v) ? v.map((x) => [k, x] as [string, string]) : v ? [[k, v] as [string, string]] : [])),
