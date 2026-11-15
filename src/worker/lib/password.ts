@@ -26,6 +26,13 @@ export async function verifyPassword(password: string, stored: string): Promise<
 // Verified against when the account doesn't exist, so response timing doesn't reveal it.
 export const DUMMY_HASH = 'pbkdf2-sha256$100000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
+export function generatePassword(): string {
+  // 16 characters from an unambiguous alphabet.
+  const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return [...bytes].map((b) => alphabet[b % alphabet.length]).join('');
+}
+
 export function passwordProblem(password: string): string | null {
   if (password.length < 10) return 'Use at least 10 characters.';
   if (password.length > 256) return 'Use at most 256 characters.';

@@ -4,7 +4,7 @@ import { all, first, isUniqueViolation, run } from '../db/db';
 import { clearSettingsCache } from '../db/settings';
 import { newId } from '../lib/ids';
 import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors';
-import { hashPassword, passwordProblem } from '../lib/password';
+import { generatePassword, hashPassword, passwordProblem } from '../lib/password';
 import { encrypt, randomToken } from '../lib/crypto';
 import { createDomain } from './domains';
 import { assertAddressFree, mailboxStatements, memberStatement, validateNewAddress } from './mailboxes';
@@ -160,12 +160,7 @@ export async function listUsers(db: D1Database): Promise<UserSummary[]> {
   });
 }
 
-export function generatePassword(): string {
-  // 16 characters from an unambiguous alphabet.
-  const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return [...bytes].map((b) => alphabet[b % alphabet.length]).join('');
-}
+export { generatePassword } from '../lib/password';
 
 export interface CreateUserInput {
   name: string;
@@ -228,9 +223,8 @@ export async function createUser(
   if (input.sendInvitation && altEmail) {
     try {
       const { sendInvitation } = await import('./invitations');
-      const inv = await sendInvitation(env, actor, userId, altEmail, origin, ip);
+      const inv = await sendInvitation(env, actor, userId, altEmail, origin, ip, password);
       invitationStatus = inv.status;
-      inviteUrl = inv.inviteUrl;
     } catch {
       invitationStatus = 'failed';
     }
@@ -320,6 +314,7 @@ export async function changePassword(db: D1Database, userId: number, password: s
     keepSessionId
       ? db.prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?').bind(userId, keepSessionId)
       : db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+    db.prepare("UPDATE user_invitations SET status = 'accepted', accepted_at = ? WHERE user_id = ? AND status IN ('pending', 'sent')").bind(Date.now(), userId),
   ]);
 }
 

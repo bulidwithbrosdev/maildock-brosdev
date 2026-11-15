@@ -62,6 +62,7 @@ export const updateUserSchema = z.object({
 
 export const sendInvitationSchema = z.object({
   alternateEmail: z.string().trim().email().max(254).optional().nullable(),
+  password: z.string().min(10, 'Password must be at least 10 characters long.').max(256).optional(),
 });
 
 export const acceptInvitationSchema = z.object({

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, AtSign, CircleCheck, Clock, Copy, Crown, KeyRound, Mail, Search, ShieldCheck, ShieldOff, UserPlus, UsersRound } from 'lucide-react';
+import { ArrowLeft, AtSign, CircleCheck, Clock, Copy, Crown, Eye, EyeOff, KeyRound, Mail, RotateCw, Search, ShieldCheck, ShieldOff, UserPlus, UsersRound } from 'lucide-react';
 import { del, get, patch, post, put, errorText } from '../../lib/api';
 import { timeAgo } from '../../lib/format';
 import { useAction, useInvalidate } from '../../lib/hooks';
 import { useUser } from '../../lib/session';
-import { cn, copyText } from '../../lib/utils';
+import { cn, copyText, generateRandomPassword } from '../../lib/utils';
 import type { DomainInfo, MailboxAdmin, UserSummary } from '../../lib/types';
 import { Button } from '../../components/ui/button';
 import { AddressInput, ChoiceCards, Field, Input, SegmentedControl, Select, Switch, Tick } from '../../components/ui/form';
@@ -44,7 +44,7 @@ export function UsersPage() {
   const users = useUsers();
   const [creating, setCreating] = useState(false);
   const [invitingUser, setInvitingUser] = useState<UserSummary | null>(null);
-  const [secret, setSecret] = useState<{ id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; inviteUrl?: string } | null>(null);
+  const [secret, setSecret] = useState<{ id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; credentialsSent?: boolean } | null>(null);
   const [filter, setFilter] = useState('');
   const [role, setRole] = useState<RoleFilter>('all');
   const refresh = useRefresh();
@@ -247,6 +247,7 @@ export function UsersPage() {
       {invitingUser && (
         <SendInvitationDialog
           user={invitingUser}
+          initialPassword={secret?.id === invitingUser.id ? secret.password : undefined}
           onClose={() => setInvitingUser(null)}
           onSent={refresh}
         />
@@ -285,7 +286,7 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
   const [alternateEmail, setAlternateEmail] = useState(user.alternateEmail || '');
   const [storageQuota, setStorageQuota] = useState(user.storageQuota !== null && user.storageQuota !== undefined ? String(user.storageQuota) : '');
   const [role, setRole] = useState<'member' | 'admin'>(user.role === 'admin' ? 'admin' : 'member');
-  const [secret, setSecret] = useState<{ id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; inviteUrl?: string } | null>(null);
+  const [secret, setSecret] = useState<{ id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; credentialsSent?: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [inviting, setInviting] = useState(false);
   const { run, busy } = useAction();
@@ -344,7 +345,7 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
               <Field label="Sign-in email" id="uemail">
                 <Input id="uemail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
-              <Field label="Alternate / recovery email" id="ualt" hint="Personal email where credentials and account activation links are delivered.">
+              <Field label="Alternate / recovery email" id="ualt" hint="Personal email where credentials and password notifications are delivered.">
                 <Input id="ualt" type="email" value={alternateEmail} onChange={(e) => setAlternateEmail(e.target.value)} placeholder="e.g. user.personal@gmail.com" />
               </Field>
               <Field label="Storage quota (MB)" id="uquota" hint="Leave blank for unlimited storage.">
@@ -514,6 +515,7 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
       {inviting && (
         <SendInvitationDialog
           user={user}
+          initialPassword={secret?.password}
           onClose={() => setInviting(false)}
           onSent={refresh}
         />
@@ -544,14 +546,18 @@ function SecurityRow({ icon, label, value, tone, children }: { icon: ReactNode; 
 
 function SendInvitationDialog({
   user,
+  initialPassword,
   onClose,
   onSent,
 }: {
   user: UserSummary;
+  initialPassword?: string;
   onClose: () => void;
   onSent: () => void;
 }) {
   const [alternateEmail, setAlternateEmail] = useState(user.alternateEmail || '');
+  const [password, setPassword] = useState(() => initialPassword || generateRandomPassword());
+  const [showPassword, setShowPassword] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const toast = useToast();
@@ -559,13 +565,22 @@ function SendInvitationDialog({
   const isResend = user.invitationStatus === 'sent' || user.invitationStatus === 'expired';
 
   const send = async () => {
+    if (!alternateEmail.trim()) {
+      setError('Please provide an alternate email address to send the credentials.');
+      return;
+    }
+    if (!password.trim() || password.length < 10) {
+      setError('Password must be at least 10 characters long.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
       await post(`/admin/users/${user.id}/send-credentials`, {
-        alternateEmail: alternateEmail.trim() || undefined,
+        alternateEmail: alternateEmail.trim(),
+        password: password.trim(),
       });
-      toast.success(isResend ? 'Invitation resent successfully' : 'Credentials sent successfully');
+      toast.success(isResend ? 'Credentials resent successfully' : 'Credentials sent successfully');
       onSent();
       onClose();
     } catch (err) {
@@ -578,17 +593,17 @@ function SendInvitationDialog({
     <ConfirmDialog
       open
       onClose={onClose}
-      title={isResend ? `Resend invitation to ${user.name || user.email}?` : `Send credentials to ${user.name || user.email}?`}
-      confirmLabel={isResend ? 'Resend invitation' : 'Send Credentials'}
+      title={isResend ? `Resend credentials to ${user.name || user.email}?` : `Send credentials to ${user.name || user.email}?`}
+      confirmLabel={isResend ? 'Resend credentials' : 'Send Credentials'}
       loading={busy}
       onConfirm={send}
     >
-      <div className="space-y-3 text-[13px]">
+      <div className="space-y-3.5 text-[13px]">
         {error && <Alert tone="danger">{error}</Alert>}
         <p className="text-muted">
-          A secure, single-use password setup link will be delivered so {user.name?.split(' ')[0] || 'they'} can set their password and activate their business email account.
+          Login credentials (email address and temporary password) will be delivered to their personal email address.
         </p>
-        <Field label="Deliver to alternate / recovery email" hint="Personal or existing email address where credentials will arrive.">
+        <Field label="Deliver to alternate / recovery email" hint="Personal email address where credentials will arrive.">
           <Input
             type="email"
             required
@@ -597,6 +612,56 @@ function SendInvitationDialog({
             placeholder="e.g. user.personal@gmail.com"
             autoFocus
           />
+        </Field>
+        <Field
+          label="Temporary password"
+          hint="First randomly generated. You can click Generate to create a new one, or type your own password. The user will be prompted to set their own password upon first sign-in."
+        >
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 pr-16 text-[13px] font-mono tracking-wide text-fg placeholder:text-faint focus:border-primary focus:outline-none focus:ring-3 focus:ring-[var(--ring)]"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter or generate password"
+                minLength={10}
+                required
+              />
+              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="flex h-7 w-7 items-center justify-center rounded text-faint hover:text-fg"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => {
+                    copyText(password).then(() => toast.success('Password copied'));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded text-faint hover:text-fg"
+                  title="Copy password"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={<RotateCw className="h-3.5 w-3.5" />}
+              onClick={() => setPassword(generateRandomPassword())}
+              title="Generate new random password"
+            >
+              Generate
+            </Button>
+          </div>
         </Field>
       </div>
     </ConfirmDialog>
@@ -608,7 +673,7 @@ function SecretDialog({
   onClose,
   onSendCredentials,
 }: {
-  secret: { id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; inviteUrl?: string };
+  secret: { id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; credentialsSent?: boolean };
   onClose: () => void;
   onSendCredentials?: () => void;
 }) {
@@ -618,7 +683,6 @@ function SecretDialog({
     ['Email', secret.email, false],
     ...(secret.password ? [['Password', secret.password, true] as [string, string, boolean]] : []),
     ...(secret.alternateEmail ? [['Sent to', secret.alternateEmail, false] as [string, string, boolean]] : []),
-    ...(secret.inviteUrl ? [['Activation link', secret.inviteUrl, false] as [string, string, boolean]] : []),
   ];
 
   return (
@@ -628,11 +692,11 @@ function SecretDialog({
       size="sm"
       icon={<CircleCheck />}
       tone="success"
-      title={secret.inviteUrl ? 'Account ready & invitation created' : 'Share these sign-in details'}
+      title={secret.credentialsSent ? 'Account created & credentials sent' : 'Share these sign-in details'}
       description={
-        secret.inviteUrl
-          ? `An invitation was created for ${secret.name?.split(' ')[0] || 'them'}. They can set their password using the activation link.`
-          : `Send them to ${secret.name?.split(' ')[0] || 'them'} privately. The password works once; they'll choose a new one.`
+        secret.credentialsSent
+          ? `Login credentials with a temporary password were sent to ${secret.alternateEmail}. When ${secret.name?.split(' ')[0] || 'they'} sign in, they will create their own password.`
+          : `Send these credentials to ${secret.name?.split(' ')[0] || 'them'} privately. The temporary password works once; they'll choose their own password upon first sign-in.`
       }
       footer={
         <>
@@ -643,7 +707,6 @@ function SecretDialog({
                 `Sign in at ${location.origin}`,
                 `Email: ${secret.email}`,
                 secret.password ? `Password: ${secret.password}` : '',
-                secret.inviteUrl ? `Activation link: ${secret.inviteUrl}` : '',
               ]
                 .filter(Boolean)
                 .join('\n');
@@ -652,7 +715,7 @@ function SecretDialog({
           >
             Copy all
           </Button>
-          {onSendCredentials && (
+          {!secret.credentialsSent && onSendCredentials && (
             <Button
               variant="secondary"
               icon={<Mail className="h-3.5 w-3.5" />}
@@ -688,7 +751,7 @@ function CreateUserDialog({
   onCreated,
 }: {
   onClose: () => void;
-  onCreated: (r: { id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; inviteUrl?: string }) => void;
+  onCreated: (r: { id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; credentialsSent?: boolean }) => void;
 }) {
   const domains = useQuery({ queryKey: ['admin', 'domains'], queryFn: () => get<DomainInfo[]>('/admin/domains') });
   const mailboxes = useQuery({ queryKey: ['admin', 'mailboxes'], queryFn: () => get<MailboxAdmin[]>('/admin/mailboxes') });
@@ -699,8 +762,9 @@ function CreateUserDialog({
   const [domainId, setDomainId] = useState<number | ''>('');
   const [email, setEmail] = useState('');
   const [alternateEmail, setAlternateEmail] = useState('');
-  const [authMethod, setAuthMethod] = useState<'invite' | 'manual'>('manual');
-  const [manualPassword, setManualPassword] = useState('');
+  const [authMethod, setAuthMethod] = useState<'invite' | 'manual'>('invite');
+  const [password, setPassword] = useState(() => generateRandomPassword());
+  const [showPassword, setShowPassword] = useState(false);
   const [storageQuota, setStorageQuota] = useState('');
   const [shared, setShared] = useState<number[]>([]);
   const [error, setError] = useState('');
@@ -708,6 +772,7 @@ function CreateUserDialog({
   const domainList = domains.data ?? [];
   const domain = domainList.find((d) => d.id === domainId) ?? domainList[0];
   const suggested = name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
+  const toast = useToast();
 
   const mailboxPreview = mode === 'new' && domain ? `${localPart || suggested || 'user'}@${domain.name}` : email;
 
@@ -717,10 +782,14 @@ function CreateUserDialog({
       setError('Please provide an alternate email address to send the credentials.');
       return;
     }
+    if (!password.trim() || password.length < 10) {
+      setError('Password must be at least 10 characters long.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      const r = await post<{ id: number; email: string; password?: string; invitationStatus?: string; inviteUrl?: string }>('/admin/users', {
+      const r = await post<{ id: number; email: string; password?: string; invitationStatus?: string }>('/admin/users', {
         name,
         role,
         email: mode === 'existing' ? email : undefined,
@@ -728,16 +797,16 @@ function CreateUserDialog({
         storageQuota: storageQuota ? Number(storageQuota) : null,
         newMailbox: mode === 'new' ? { localPart: localPart || suggested, domainId: domain?.id } : null,
         mailboxIds: shared,
-        password: authMethod === 'manual' && manualPassword.trim() ? manualPassword.trim() : undefined,
+        password: password.trim(),
         sendInvitation: authMethod === 'invite',
       });
       onCreated({
         id: r.id,
         name,
         email: r.email,
-        password: authMethod === 'manual' ? r.password : undefined,
+        password: r.password || password.trim(),
         alternateEmail: alternateEmail.trim() || null,
-        inviteUrl: r.inviteUrl,
+        credentialsSent: authMethod === 'invite',
       });
     } catch (err) {
       setError(errorText(err));
@@ -812,7 +881,7 @@ function CreateUserDialog({
           </Field>
         )}
 
-        <Field label="Alternate / recovery email" id="alternateEmail" hint="Personal email where credentials and activation links will be delivered.">
+        <Field label="Alternate / recovery email" id="alternateEmail" hint="Personal email where credentials and password notifications will be delivered.">
           <Input
             id="alternateEmail"
             type="email"
@@ -829,30 +898,69 @@ function CreateUserDialog({
             onChange={setAuthMethod}
             options={[
               {
-                value: 'manual',
-                label: 'Manual temporary password',
-                hint: 'Set or auto-generate a temporary password to share manually.',
+                value: 'invite',
+                label: 'Send credentials via email',
+                hint: 'Delivers email address and temporary password to their alternate email.',
               },
               {
-                value: 'invite',
-                label: 'Email invitation link',
-                hint: 'Sends a secure, single-use password setup link to their alternate email.',
+                value: 'manual',
+                label: 'Share manually',
+                hint: 'Generate or set a temporary password to share with the user yourself.',
               },
             ]}
           />
         </Field>
 
-        {authMethod === 'manual' && (
-          <Field label="Temporary password" hint="Leave blank to auto-generate a secure 16-character password.">
-            <Input
-              type="password"
-              value={manualPassword}
-              onChange={(e) => setManualPassword(e.target.value)}
-              placeholder="Auto-generated if blank"
-              minLength={10}
-            />
-          </Field>
-        )}
+        <Field
+          label="Temporary password"
+          hint="First randomly generated. You can click Generate to create a new one, or type your own password. The user will be required to set their own password upon first sign-in."
+        >
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 pr-16 text-[13px] font-mono tracking-wide text-fg placeholder:text-faint focus:border-primary focus:outline-none focus:ring-3 focus:ring-[var(--ring)]"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter or generate password"
+                minLength={10}
+                required
+              />
+              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="flex h-7 w-7 items-center justify-center rounded text-faint hover:text-fg"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => {
+                    copyText(password).then(() => toast.success('Password copied'));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded text-faint hover:text-fg"
+                  title="Copy password"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={<RotateCw className="h-3.5 w-3.5" />}
+              onClick={() => setPassword(generateRandomPassword())}
+              title="Generate new random password"
+            >
+              Generate
+            </Button>
+          </div>
+        </Field>
 
         <Field label="Storage quota (MB)" hint="Optional storage limit. Leave blank for unlimited.">
           <Input

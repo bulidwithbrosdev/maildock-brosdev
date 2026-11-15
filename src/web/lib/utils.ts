@@ -2,6 +2,12 @@ export function cn(...parts: unknown[]): string {
   return parts.filter((p) => typeof p === 'string' && p).join(' ');
 }
 
+export function generateRandomPassword(length = 16): string {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes).map((b) => alphabet[b % alphabet.length]).join('');
+}
+
 export function copyText(text: string): Promise<void> {
   return navigator.clipboard.writeText(text);
 }

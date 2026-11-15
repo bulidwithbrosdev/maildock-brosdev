@@ -118,14 +118,14 @@ admin.post('/users', async (c) => {
 admin.post('/users/:id/send-credentials', async (c) => {
   const bodyData = await c.req.json().catch(() => ({}));
   const origin = new URL(c.req.url).origin;
-  const result = await sendInvitation(c.env, currentUser(c), intParam(c, 'id'), bodyData.alternateEmail, origin, clientIp(c));
+  const result = await sendInvitation(c.env, currentUser(c), intParam(c, 'id'), bodyData.alternateEmail, origin, clientIp(c), bodyData.password);
   return c.json(result);
 });
 
 admin.post('/users/:id/invite', async (c) => {
   const bodyData = await c.req.json().catch(() => ({}));
   const origin = new URL(c.req.url).origin;
-  const result = await sendInvitation(c.env, currentUser(c), intParam(c, 'id'), bodyData.alternateEmail, origin, clientIp(c));
+  const result = await sendInvitation(c.env, currentUser(c), intParam(c, 'id'), bodyData.alternateEmail, origin, clientIp(c), bodyData.password);
   return c.json(result);
 });
 

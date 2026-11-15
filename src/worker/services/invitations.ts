@@ -4,7 +4,7 @@ import { all, first, run } from '../db/db';
 import { loadSettings } from '../db/settings';
 import { badRequest, errorMessage, notFound, tooMany } from '../lib/errors';
 import { randomToken, sha256Hex } from '../lib/crypto';
-import { hashPassword, passwordProblem } from '../lib/password';
+import { generatePassword, hashPassword, passwordProblem } from '../lib/password';
 import { domainOf, isValidAddress, type Address } from '../mail/address';
 import { buildMime } from '../mail/mime';
 import { newMessageId } from '../mail/threading';
@@ -36,117 +36,160 @@ export function renderInvitationEmail({
   userName,
   mailboxEmail,
   webmailUrl,
-  activationUrl,
+  password,
   instanceName,
+  senderName,
+  senderEmail,
 }: {
   userName: string;
   mailboxEmail: string;
   webmailUrl: string;
-  activationUrl: string;
-  instanceName: string;
+  password?: string;
+  instanceName?: string;
+  senderName?: string;
+  senderEmail?: string;
 }): { subject: string; html: string; text: string } {
-  const subject = 'Your Business Email Account Is Ready';
-  const appName = instanceName || 'Maildock';
-  const name = userName?.trim() || mailboxEmail;
+  const subject = 'Your business email account is ready';
+  const domain = mailboxEmail.includes('@') ? mailboxEmail.split('@')[1] : 'yourdomain.com';
+  const firstName = userName?.trim() ? userName.trim().split(/\s+/)[0] : mailboxEmail.split('@')[0];
+  const loginUrl = `${webmailUrl.replace(/\/+$/, '')}/login`;
+  const tempPassword = password || '';
+  const testEmail = `hello@${domain}`;
+  const adminContactName = senderName?.trim() || 'Administrator';
+  const adminContactEmail = senderEmail?.trim() || `admin@${domain}`;
+  const adminTitle = 'IT Administration';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${subject}</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${subject}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 40px 16px;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 560px; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-          <!-- Header -->
-          <tr>
-            <td style="padding: 28px 32px 20px; border-bottom: 1px solid #f1f5f9;">
-              <table cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="vertical-align: middle;">
-                    <div style="background-color: #fef2f2; border: 1px solid #fecaca; width: 38px; height: 38px; border-radius: 8px; text-align: center; line-height: 38px; font-size: 20px;">
-                      &#x2709;&#xFE0F;
-                    </div>
-                  </td>
-                  <td style="vertical-align: middle; padding-left: 12px;">
-                    <span style="font-size: 18px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em;">${appName}</span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <!-- Main Content -->
-          <tr>
-            <td style="padding: 32px;">
-              <h1 style="margin: 0 0 16px; font-size: 21px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em;">Your Business Email Account Is Ready</h1>
-              <p style="margin: 0 0 16px; font-size: 15px; color: #334155;">Hello <strong>${name}</strong>,</p>
-              <p style="margin: 0 0 24px; font-size: 15px; color: #334155;">Your business email account has been successfully created. Here are your account details:</p>
-              
-              <!-- Account Details Box -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 28px;">
-                <tr>
-                  <td style="padding: 13px 18px; border-bottom: 1px solid #e2e8f0; font-size: 13px; color: #64748b; width: 130px;">Email Address</td>
-                  <td style="padding: 13px 18px; border-bottom: 1px solid #e2e8f0; font-size: 14px; font-weight: 600; color: #0f172a; font-family: ui-monospace, SFMono-Regular, monospace;">${mailboxEmail}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 13px 18px; font-size: 13px; color: #64748b; width: 130px;">Webmail Login</td>
-                  <td style="padding: 13px 18px; font-size: 14px; color: #2563eb;"><a href="${webmailUrl}" style="color: #2563eb; text-decoration: none;">${webmailUrl}</a></td>
-                </tr>
-              </table>
-              
-              <p style="margin: 0 0 24px; font-size: 15px; color: #334155;">To activate your account, click the secure password setup link below:</p>
-              
-              <!-- Call to Action Button -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 28px;">
-                <tr>
-                  <td align="center">
-                    <a href="${activationUrl}" target="_blank" style="display: inline-block; background-color: #dc2626; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; padding: 13px 36px; border-radius: 8px; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.25);">
-                      Set Your Password
-                    </a>
-                  </td>
-                </tr>
-              </table>
-              
-              <p style="margin: 0 0 12px; font-size: 12.5px; color: #64748b; line-height: 1.5;">
-                This link is single-use, securely generated, and will expire after 24 hours.
-              </p>
-              <p style="margin: 0; font-size: 12px; color: #94a3b8; word-break: break-all;">
-                If the button above does not work, copy and paste this URL into your browser:<br>
-                <a href="${activationUrl}" style="color: #64748b;">${activationUrl}</a>
-              </p>
-            </td>
-          </tr>
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 20px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center; font-size: 12px; color: #94a3b8;">
-              Secured by <strong>Maildock</strong> · Your own email, on your own domains.
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
+<body style="margin:0;padding:0;background:#f5f5f5;">
+<!-- Hidden preview text shown in the inbox list -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f5f5f5;">Your Brosdev Solutions email address is set up. Here is how to sign in.</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;">
+<tr><td align="center" style="padding:24px 12px;">
+
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#000000;">
+
+  <!-- Header -->
+  <tr><td style="background:#000000;padding:26px 32px;border-bottom:4px solid #A90706;">
+    <div style="font-size:22px;font-weight:bold;letter-spacing:3px;color:#ffffff;">BROSDEV</div>
+    <div style="font-size:11px;letter-spacing:2px;color:#8A8A8A;">SOLUTIONS</div>
+  </td></tr>
+
+  <!-- Title -->
+  <tr><td style="padding:36px 32px 8px 32px;">
+    <h1 style="margin:0;font-size:26px;line-height:1.25;font-weight:bold;color:#000000;">Your business email account is ready</h1>
+  </td></tr>
+
+  <!-- Intro -->
+  <tr><td style="padding:12px 32px 8px 32px;font-size:15px;line-height:1.6;color:#333333;">
+    Hi ${firstName},<br><br>
+    Welcome to Brosdev Solutions. Your company email account has been created on Maildock, and you can sign in and start using it today.
+  </td></tr>
+
+  <!-- Account details -->
+  <tr><td style="padding:16px 32px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;border-left:4px solid #A90706;">
+      <tr><td style="padding:18px 20px;font-size:14px;line-height:1.8;color:#000000;">
+        <span style="color:#555555;">Email address</span><br>
+        <strong style="font-size:16px;">${mailboxEmail}</strong><br>
+        <span style="color:#555555;">Sign-in page (Maildock)</span><br>
+        <a href="${loginUrl}" style="color:#A90706;text-decoration:underline;">${loginUrl}</a><br>
+        <span style="color:#555555;">Temporary password</span><br>
+        <strong style="font-family:'Courier New',Courier,monospace;font-size:16px;letter-spacing:1px;background:#ffffff;border:1px solid #d9d9d9;padding:4px 10px;display:inline-block;margin-top:2px;">${tempPassword}</strong><br>
+        <span style="font-size:12px;color:#8A8A8A;">You will be asked to set a new password the first time you sign in.</span>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Button -->
+  <tr><td align="left" style="padding:8px 32px 24px 32px;">
+    <a href="${loginUrl}" style="display:inline-block;background:#A90706;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:14px 28px;">Sign in to your email</a>
+  </td></tr>
+
+  <!-- First steps -->
+  <tr><td style="padding:0 32px 8px 32px;">
+    <h2 style="margin:0 0 10px 0;font-size:18px;color:#000000;">Your first steps</h2>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;line-height:1.6;color:#333333;">
+      <tr><td valign="top" style="padding:0 12px 10px 0;color:#A90706;font-weight:bold;">1.</td><td style="padding-bottom:10px;"><strong>Sign in</strong> with your email address and the temporary password.</td></tr>
+      <tr><td valign="top" style="padding:0 12px 10px 0;color:#A90706;font-weight:bold;">2.</td><td style="padding-bottom:10px;"><strong>Change your password</strong> straight away, then delete this email. Use at least 12 characters, and do not reuse an old one.</td></tr>
+      <tr><td valign="top" style="padding:0 12px 10px 0;color:#A90706;font-weight:bold;">3.</td><td style="padding-bottom:10px;"><strong>Add your signature</strong> using the signature template we shared with you.</td></tr>
+      <tr><td valign="top" style="padding:0 12px 10px 0;color:#A90706;font-weight:bold;">4.</td><td style="padding-bottom:10px;"><strong>Send a test email</strong> to <a href="mailto:${testEmail}" style="color:#A90706;text-decoration:none;">${testEmail}</a> and check that it arrives.</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Safety -->
+  <tr><td style="padding:12px 32px 8px 32px;">
+    <h2 style="margin:0 0 10px 0;font-size:18px;color:#000000;">Keep your account safe</h2>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;line-height:1.6;color:#333333;">
+      <tr><td valign="top" style="padding:0 10px 6px 0;color:#A90706;">&#9632;</td><td style="padding-bottom:6px;">Never share your password, even with colleagues or IT.</td></tr>
+      <tr><td valign="top" style="padding:0 10px 6px 0;color:#A90706;">&#9632;</td><td style="padding-bottom:6px;">We will never ask for your password by email or message.</td></tr>
+      <tr><td valign="top" style="padding:0 10px 6px 0;color:#A90706;">&#9632;</td><td style="padding-bottom:6px;">Be careful with unexpected links and attachments, and report anything suspicious.</td></tr>
+      <tr><td valign="top" style="padding:0 10px 6px 0;color:#A90706;">&#9632;</td><td style="padding-bottom:6px;">Use this account for company work only.</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Help -->
+  <tr><td style="padding:20px 32px 28px 32px;font-size:14px;line-height:1.6;color:#333333;">
+    Cannot sign in or need help? Reply to this email or contact ${adminContactName} at <a href="mailto:${adminContactEmail}" style="color:#A90706;">${adminContactEmail}</a>.<br><br>
+    Welcome aboard,<br>
+    <strong>${adminContactName}</strong><br>
+    ${adminTitle}, Brosdev Solutions
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="background:#000000;padding:20px 32px;font-size:11px;line-height:1.6;color:#8A8A8A;">
+    <span style="color:#ffffff;font-weight:bold;">Secured by Maildock</span> &middot; Your own email, on your own domains.<br><br>
+    Brosdev Solutions<br>
+    This email is confidential and intended only for ${firstName}. If you received it by mistake, please tell us and delete it.
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
 </body>
 </html>`;
 
-  const text = `Hello ${name},
+  const text = `Your business email account is ready
 
-Your business email account has been successfully created.
+Hi ${firstName},
 
-Your account details:
-- Email Address: ${mailboxEmail}
-- Webmail Login: ${webmailUrl}
+Welcome to Brosdev Solutions. Your company email account has been created on Maildock, and you can sign in and start using it today.
 
-To activate your account, click the secure password setup link below:
-${activationUrl}
+Account details:
+- Email address: ${mailboxEmail}
+- Sign-in page (Maildock): ${loginUrl}
+- Temporary password: ${tempPassword}
+(You will be asked to set a new password the first time you sign in.)
 
-This link is single-use, securely generated and expires after 24 hours.
+Sign in to your email: ${loginUrl}
+
+Your first steps:
+1. Sign in with your email address and the temporary password.
+2. Change your password straight away, then delete this email. Use at least 12 characters, and do not reuse an old one.
+3. Add your signature using the signature template we shared with you.
+4. Send a test email to ${testEmail} and check that it arrives.
+
+Keep your account safe:
+- Never share your password, even with colleagues or IT.
+- We will never ask for your password by email or message.
+- Be careful with unexpected links and attachments, and report anything suspicious.
+- Use this account for company work only.
+
+Cannot sign in or need help? Reply to this email or contact ${adminContactName} at ${adminContactEmail}.
+
+Welcome aboard,
+${adminContactName}
+${adminTitle}, Brosdev Solutions
 
 --
-${appName} · Powered by Maildock`;
+Secured by Maildock · Your own email, on your own domains.
+This email is confidential and intended only for ${firstName}. If you received it by mistake, please tell us and delete it.`;
 
   return { subject, html, text };
 }
@@ -199,7 +242,8 @@ export async function sendInvitation(
   overrideAlternateEmail?: string | null,
   origin?: string,
   ip = '127.0.0.1',
-): Promise<{ ok: boolean; status: 'sent' | 'failed'; error?: string; inviteUrl: string; sentAt: number }> {
+  customPassword?: string,
+): Promise<{ ok: boolean; status: 'sent' | 'failed'; error?: string; password?: string; sentAt: number }> {
   const user = await getUser(env.DB, userId);
   const settings = await loadSettings(env.DB);
   const now = Date.now();
@@ -225,21 +269,33 @@ export async function sendInvitation(
     await run(env.DB, 'UPDATE users SET alternate_email = ? WHERE id = ?', recipientEmail, userId);
   }
 
-  const { id: invitationId, token } = await createInvitationToken(env.DB, userId, recipientEmail);
+  // Password handling: use provided password or generate a secure random one
+  const password = customPassword?.trim() || generatePassword();
+  const problem = passwordProblem(password);
+  if (problem) throw badRequest(problem, 'weak_password');
+
+  // Update the user's password in the database and ensure must_change_password = 1
+  const passwordHash = await hashPassword(password);
+  await env.DB.batch([
+    env.DB.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').bind(passwordHash, userId),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+  ]);
+
+  const { id: invitationId } = await createInvitationToken(env.DB, userId, recipientEmail);
 
   const baseOrigin = settings.appUrl || origin || 'http://localhost:5173';
   const webmailUrl = baseOrigin.replace(/\/+$/, '');
-  const activationUrl = `${webmailUrl}/activate?token=${encodeURIComponent(token)}`;
+  const fromDomain = domainOf(user.email);
 
   const emailContent = renderInvitationEmail({
     userName: user.name,
     mailboxEmail: user.email,
     webmailUrl,
-    activationUrl,
+    password,
     instanceName: settings.instanceName,
+    senderName: actor?.name,
+    senderEmail: actor?.email || `admin@${fromDomain}`,
   });
-
-  const fromDomain = domainOf(user.email);
   const from: Address = {
     name: settings.instanceName || 'Maildock',
     address: `no-reply@${fromDomain}`,
@@ -280,7 +336,7 @@ export async function sendInvitation(
       log('invitation.sent', { userId, recipient: recipientEmail, provider: provider.type });
     } else {
       // In local development or before an outbound provider is set up, simulate delivery
-      log('invitation.simulated', { userId, recipient: recipientEmail, url: activationUrl });
+      log('invitation.simulated', { userId, recipient: recipientEmail, password });
     }
   } catch (err) {
     deliveryStatus = 'failed';
@@ -311,7 +367,7 @@ export async function sendInvitation(
     ok: deliveryStatus === 'sent',
     status: deliveryStatus,
     error: deliveryError,
-    inviteUrl: activationUrl,
+    password,
     sentAt: now,
   };
 }
