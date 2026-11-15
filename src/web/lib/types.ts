@@ -24,6 +24,8 @@ export interface SessionUser {
   totpEnabled: boolean;
   preferences: Record<string, unknown>;
   storageQuota?: number | null;
+  designation?: string | null;
+  signatureChangeable?: boolean;
 }
 
 export interface Label {
@@ -227,6 +229,8 @@ export interface UserSummary {
   mailboxes: { id: number; address: string; canSend: boolean }[];
   alternateEmail?: string | null;
   storageQuota?: number | null;
+  designation?: string | null;
+  signatureChangeable?: boolean;
   invitationStatus?: 'none' | 'manual' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed';
   lastInvitationSentAt?: number | null;
 }

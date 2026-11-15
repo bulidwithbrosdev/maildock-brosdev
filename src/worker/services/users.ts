@@ -1,7 +1,7 @@
 // Users: the owner claim at setup, admin-created users, and password management.
 import type { Env } from '../env';
 import { all, first, isUniqueViolation, run } from '../db/db';
-import { clearSettingsCache } from '../db/settings';
+import { clearSettingsCache, loadSettings } from '../db/settings';
 import { newId } from '../lib/ids';
 import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors';
 import { generatePassword, hashPassword, passwordProblem } from '../lib/password';
@@ -12,6 +12,7 @@ import { auditStmt } from './audit';
 import type { Role } from '../../shared/constants';
 import type { Cloudflare } from '../cloudflare/client';
 import type { SessionUser } from '../types';
+import { renderSignatureTemplate } from '../../shared/signature';
 
 export interface UserRow {
   id: number;
@@ -30,6 +31,8 @@ export interface UserRow {
   last_login_at: number | null;
   alternate_email?: string | null;
   storage_quota?: number | null;
+  designation?: string | null;
+  signature_changeable?: number | null;
 }
 
 export async function getUser(db: D1Database, id: number): Promise<UserRow> {
@@ -103,6 +106,8 @@ export interface UserSummary {
   mailboxes: { id: number; address: string; canSend: boolean }[];
   alternateEmail?: string | null;
   storageQuota?: number | null;
+  designation?: string | null;
+  signatureChangeable?: boolean;
   invitationStatus?: 'none' | 'manual' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed';
   lastInvitationSentAt?: number | null;
 }
@@ -159,6 +164,8 @@ export async function listUsers(db: D1Database): Promise<UserSummary[]> {
       mailboxes: access.filter((a) => a.user_id === u.id).map((a) => ({ id: a.mailbox_id, address: a.address, canSend: !!a.can_send })),
       alternateEmail: u.alternate_email ?? null,
       storageQuota: u.storage_quota ?? null,
+      designation: u.designation ?? null,
+      signatureChangeable: u.signature_changeable !== 0,
       invitationStatus: invStatus,
       lastInvitationSentAt: inv?.sent_at ?? null,
     };
@@ -173,6 +180,8 @@ export interface CreateUserInput {
   email?: string; // login email when no new mailbox is created
   alternateEmail?: string | null;
   storageQuota?: number | null;
+  designation?: string | null;
+  signatureChangeable?: boolean;
   newMailbox?: { localPart: string; domainId: number } | null;
   mailboxIds?: number[];
   password?: string;
@@ -193,6 +202,8 @@ export async function createUser(
   const now = Date.now();
   const statements: D1PreparedStatement[] = [];
   let email = (input.email ?? '').trim().toLowerCase();
+  const designation = input.designation?.trim() || null;
+  const signatureChangeable = input.signatureChangeable !== false ? 1 : 0;
 
   if (input.newMailbox) {
     const domain = await first<{ id: number; name: string }>(env.DB, 'SELECT id, name FROM domains WHERE id = ?', input.newMailbox.domainId);
@@ -200,7 +211,23 @@ export async function createUser(
     const address = validateNewAddress(input.newMailbox.localPart, domain.name);
     await assertAddressFree(env.DB, address);
     email ||= address;
-    const mb = mailboxStatements(env.DB, { domainId: domain.id, address, displayName: input.name.trim() });
+
+    let initialSignature = '';
+    try {
+      const settings = await loadSettings(env.DB);
+      if (settings.signatureEnabled && settings.signatureTemplate) {
+        initialSignature = renderSignatureTemplate(settings.signatureTemplate, {
+          name: input.name.trim(),
+          email: address,
+          designation,
+          company: settings.instanceName || 'Brosdev Solutions',
+        });
+      }
+    } catch {
+      initialSignature = '';
+    }
+
+    const mb = mailboxStatements(env.DB, { domainId: domain.id, address, displayName: input.name.trim(), signature: initialSignature });
     statements.push(...mb.statements, memberStatement(env.DB, mb.mailboxId, userId, true));
   }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw badRequest('Enter a valid login email.');
@@ -212,10 +239,10 @@ export async function createUser(
   try {
     await env.DB.batch([
       env.DB.prepare(
-        'INSERT INTO users (id, email, name, password_hash, role, must_change_password, created_at, alternate_email, storage_quota) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)',
-      ).bind(userId, email, input.name.trim(), await hashPassword(password), input.role, now, altEmail, quota),
+        'INSERT INTO users (id, email, name, password_hash, role, must_change_password, created_at, alternate_email, storage_quota, designation, signature_changeable) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)',
+      ).bind(userId, email, input.name.trim(), await hashPassword(password), input.role, now, altEmail, quota, designation, signatureChangeable),
       ...statements,
-      auditStmt(env.DB, { userId: actor.id, action: 'user.created', target: email, details: { role: input.role, alternateEmail: altEmail }, ip }),
+      auditStmt(env.DB, { userId: actor.id, action: 'user.created', target: email, details: { role: input.role, alternateEmail: altEmail, designation }, ip }),
     ]);
   } catch (e) {
     if (isUniqueViolation(e)) throw conflict(`${email} already has an account or is in use.`);
@@ -242,7 +269,16 @@ export async function updateUser(
   env: Env,
   actor: SessionUser,
   id: number,
-  patch: { name?: string; role?: 'admin' | 'member'; status?: 'active' | 'disabled'; email?: string; alternateEmail?: string | null; storageQuota?: number | null },
+  patch: {
+    name?: string;
+    role?: 'admin' | 'member';
+    status?: 'active' | 'disabled';
+    email?: string;
+    alternateEmail?: string | null;
+    storageQuota?: number | null;
+    designation?: string | null;
+    signatureChangeable?: boolean;
+  },
   ip: string,
 ): Promise<void> {
   const u = await getUser(env.DB, id);
@@ -251,16 +287,20 @@ export async function updateUser(
   const email = patch.email?.trim().toLowerCase() ?? u.email;
   const alternateEmail = patch.alternateEmail !== undefined ? (patch.alternateEmail?.trim().toLowerCase() || null) : (u.alternate_email ?? null);
   const storageQuota = patch.storageQuota !== undefined ? patch.storageQuota : (u.storage_quota ?? null);
+  const designation = patch.designation !== undefined ? (patch.designation?.trim() || null) : (u.designation ?? null);
+  const signatureChangeable = patch.signatureChangeable !== undefined ? (patch.signatureChangeable ? 1 : 0) : (u.signature_changeable !== 0 ? 1 : 0);
 
   try {
     await env.DB.batch([
-      env.DB.prepare('UPDATE users SET name = ?, role = ?, status = ?, email = ?, alternate_email = ?, storage_quota = ? WHERE id = ?').bind(
+      env.DB.prepare('UPDATE users SET name = ?, role = ?, status = ?, email = ?, alternate_email = ?, storage_quota = ?, designation = ?, signature_changeable = ? WHERE id = ?').bind(
         patch.name?.trim() ?? u.name,
         patch.role ?? u.role,
         patch.status ?? u.status,
         email,
         alternateEmail,
         storageQuota,
+        designation,
+        signatureChangeable,
         id,
       ),
       ...(patch.status === 'disabled' ? [env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id)] : []),

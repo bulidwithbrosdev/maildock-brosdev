@@ -45,6 +45,8 @@ export const createUserSchema = z.object({
   email: z.string().trim().max(254).optional(),
   alternateEmail: z.string().trim().max(254).optional().nullable(),
   storageQuota: z.number().int().min(0).max(1_000_000_000).optional().nullable(),
+  designation: z.string().trim().max(100).optional().nullable(),
+  signatureChangeable: z.boolean().optional(),
   newMailbox: z.object({ localPart: z.string().trim().min(1).max(64), domainId: id }).nullable().optional(),
   mailboxIds: z.array(id).max(100).optional(),
   password: z.string().max(256).optional(),
@@ -58,6 +60,8 @@ export const updateUserSchema = z.object({
   email: z.string().trim().min(3).max(254).optional(),
   alternateEmail: z.string().trim().max(254).optional().nullable(),
   storageQuota: z.number().int().min(0).max(1_000_000_000).optional().nullable(),
+  designation: z.string().trim().max(100).optional().nullable(),
+  signatureChangeable: z.boolean().optional(),
 });
 
 export const sendInvitationSchema = z.object({

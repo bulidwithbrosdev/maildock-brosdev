@@ -38,6 +38,7 @@ import { cloudflareUsage, growthEstimate, storageSummary } from '../services/usa
 import { checkForUpdate } from '../services/updates';
 import { createUser, deleteUser, getUser, listUsers, resetUserPassword, resetUserTotp, updateUser } from '../services/users';
 import { sendInvitation, sendPasswordReset } from '../services/invitations';
+import { syncAllSignatures, syncUserSignature } from '../services/signatures';
 import { createSubdomain, getSubdomainProvisionStatus, provisionSubdomain } from '../services/subdomains';
 import {
   addAlias,
@@ -161,10 +162,55 @@ admin.post('/users/:id/reset-2fa', async (c) => {
   return c.json({ ok: true });
 });
 
+admin.post('/users/:id/sync-signature', async (c) => {
+  const count = await syncUserSignature(c.env, intParam(c, 'id'));
+  return c.json({ ok: true, count });
+});
+
 admin.delete('/users/:id', async (c) => {
   const reassign = c.req.query('reassignTo') ? Number(c.req.query('reassignTo')) : null;
   await deleteUser(c.env, currentUser(c), intParam(c, 'id'), reassign, clientIp(c));
   return c.json({ ok: true });
+});
+
+// Signatures ---------------------------------------------------------------------------------------
+
+admin.get('/signatures', async (c) => {
+  const settings = await loadSettings(c.env.DB);
+  return c.json({
+    template: settings.signatureTemplate,
+    enabled: settings.signatureEnabled,
+    editableDefault: settings.signatureEditableDefault,
+  });
+});
+
+admin.put('/signatures', async (c) => {
+  const input = await c.req.json();
+  await saveSettings(c.env.DB, {
+    signatureTemplate: typeof input.template === 'string' ? input.template : undefined,
+    signatureEnabled: typeof input.enabled === 'boolean' ? input.enabled : undefined,
+    signatureEditableDefault: typeof input.editableDefault === 'boolean' ? input.editableDefault : undefined,
+  });
+  return c.json({ ok: true });
+});
+
+admin.post('/signatures/apply-all', async (c) => {
+  const input = await c.req.json().catch(() => ({}));
+  if (input.template) {
+    await saveSettings(c.env.DB, { signatureTemplate: input.template });
+  }
+  const result = await syncAllSignatures(c.env, input.template);
+  if (input.updateChangeable !== undefined) {
+    await run(c.env.DB, 'UPDATE users SET signature_changeable = ? WHERE role = "member"', input.updateChangeable ? 1 : 0);
+  }
+  await audit(c.env.DB, {
+    userId: currentUser(c).id,
+    action: 'signatures.sync_all',
+    target: 'all_mailboxes',
+    details: { ...result, updateChangeable: input.updateChangeable },
+    ip: clientIp(c),
+  });
+  return c.json({ ok: true, ...result });
 });
 
 // Mailboxes ----------------------------------------------------------------------------------------

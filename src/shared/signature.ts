@@ -44,3 +44,30 @@ export function isSafeSignatureUrl(attr: 'href' | 'src', url: string): boolean {
   const u = url.replace(/[\u0000- ]/g, '');
   return attr === 'href' ? /^(https?:|mailto:|tel:)/i.test(u) : /^(https?:|data:image\/(png|gif|jpe?g|webp);)/i.test(u);
 }
+
+export function renderSignatureTemplate(
+  template: string,
+  vars: {
+    name?: string | null;
+    email?: string | null;
+    designation?: string | null;
+    company?: string | null;
+    phone?: string | null;
+    website?: string | null;
+  },
+): string {
+  if (!template) return '';
+  const replacers: [RegExp, string][] = [
+    [/\{\{\s*\.?\s*(?:employee\s+name|employee_name|name)\s*\}\}/gi, vars.name || ''],
+    [/\{\{\s*\.?\s*email\s*\}\}/gi, vars.email || ''],
+    [/\{\{\s*\.?\s*(?:employee\s+designation|employee_designation|designation|title|job_title)\s*\}\}/gi, vars.designation || ''],
+    [/\{\{\s*\.?\s*(?:company|company_name)\s*\}\}/gi, vars.company || ''],
+    [/\{\{\s*\.?\s*phone\s*\}\}/gi, vars.phone || ''],
+    [/\{\{\s*\.?\s*(?:website|url)\s*\}\}/gi, vars.website || ''],
+  ];
+  let res = template;
+  for (const [re, val] of replacers) {
+    res = res.replace(re, val);
+  }
+  return res;
+}

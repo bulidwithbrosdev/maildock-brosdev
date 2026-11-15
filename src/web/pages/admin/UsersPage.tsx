@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, AtSign, CircleCheck, Clock, Copy, Crown, Eye, EyeOff, KeyRound, LoaderCircle, Mail, RotateCw, Search, ShieldCheck, ShieldOff, UserCheck, UserPlus, UsersRound, UserX } from 'lucide-react';
+import { ArrowLeft, AtSign, CircleCheck, Clock, Copy, Crown, Eye, EyeOff, KeyRound, LoaderCircle, Mail, PenLine, RotateCw, Search, ShieldCheck, ShieldOff, UserCheck, UserPlus, UsersRound, UserX } from 'lucide-react';
 import { del, get, patch, post, put, errorText } from '../../lib/api';
 import { timeAgo } from '../../lib/format';
 import { useAction, useInvalidate } from '../../lib/hooks';
@@ -135,7 +135,10 @@ export function UsersPage() {
                       <span className="truncate">{u.name || u.email}</span>
                       {u.id === me?.id && <span className="font-normal text-faint">(you)</span>}
                     </div>
-                    <div className="truncate text-[12.5px] text-muted">{u.email}</div>
+                    <div className="truncate text-[12.5px] text-muted">
+                      {u.email}
+                      {u.designation && <span className="font-normal text-faint"> · {u.designation}</span>}
+                    </div>
                     {u.alternateEmail && <div className="truncate text-[11px] text-faint">Alt: {u.alternateEmail}</div>}
                   </div>
                 </div>
@@ -277,6 +280,8 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
   const [email, setEmail] = useState(user.email);
   const [alternateEmail, setAlternateEmail] = useState(user.alternateEmail || '');
   const [storageQuota, setStorageQuota] = useState(user.storageQuota !== null && user.storageQuota !== undefined ? String(user.storageQuota) : '');
+  const [designation, setDesignation] = useState(user.designation || '');
+  const [signatureChangeable, setSignatureChangeable] = useState(user.signatureChangeable !== false);
   const [role, setRole] = useState<'member' | 'admin'>(user.role === 'admin' ? 'admin' : 'member');
   const [secret, setSecret] = useState<{ id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; credentialsSent?: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -338,6 +343,9 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
               <Field label="Sign-in email" id="uemail">
                 <Input id="uemail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
               </Field>
+              <Field label="Designation / Job title" id="udesignation" hint="Used in company email signatures.">
+                <Input id="udesignation" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Software Engineer" />
+              </Field>
               <Field label="Alternate / recovery email" id="ualt" hint="Personal email where credentials and password notifications are delivered.">
                 <Input id="ualt" type="email" value={alternateEmail} onChange={(e) => setAlternateEmail(e.target.value)} placeholder="e.g. user.personal@gmail.com" />
               </Field>
@@ -375,6 +383,8 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
                         email,
                         alternateEmail: alternateEmail.trim() || null,
                         storageQuota: storageQuota ? Number(storageQuota) : null,
+                        designation: designation.trim() || null,
+                        signatureChangeable,
                         ...(isOwner ? {} : { role }),
                       }).then(refresh),
                     'User updated',
@@ -474,6 +484,44 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
                 Turn off
               </Button>
             )}
+          </SecurityRow>
+
+          <SecurityRow
+            icon={<PenLine />}
+            label="Email signature"
+            value={signatureChangeable ? 'Changeable' : 'Locked'}
+            tone={signatureChangeable ? 'success' : undefined}
+          >
+            <div className="flex items-center gap-2">
+              <Button
+                size="xs"
+                variant="secondary"
+                loading={busy === 'sync-sig'}
+                title="Apply company signature template to this user's mailboxes"
+                onClick={() =>
+                  run(
+                    'sync-sig',
+                    () => post(`/admin/users/${user.id}/sync-signature`).then(refresh),
+                    'Company signature template applied to mailboxes',
+                  )
+                }
+              >
+                Apply template
+              </Button>
+              <Switch
+                checked={signatureChangeable}
+                disabled={busy === 'sig-lock'}
+                onChange={(val) => {
+                  setSignatureChangeable(val);
+                  run(
+                    'sig-lock',
+                    () => patch(`/admin/users/${user.id}`, { signatureChangeable: val }).then(refresh),
+                    val ? 'Signature unlocked for user' : 'Signature locked for user',
+                  );
+                }}
+                label="Allow editing signature"
+              />
+            </div>
           </SecurityRow>
 
           <SecurityRow icon={<KeyRound />} label="Password" value={user.mustChangePassword ? 'Temporary' : 'Set'}>
@@ -902,6 +950,8 @@ function CreateUserDialog({
   const [domainId, setDomainId] = useState<number | ''>('');
   const [email, setEmail] = useState('');
   const [alternateEmail, setAlternateEmail] = useState('');
+  const [designation, setDesignation] = useState('');
+  const [signatureChangeable, setSignatureChangeable] = useState(true);
   const [authMethod, setAuthMethod] = useState<'invite' | 'manual'>('invite');
   const [password, setPassword] = useState(() => generateRandomPassword());
   const [showPassword, setShowPassword] = useState(false);
@@ -935,6 +985,8 @@ function CreateUserDialog({
         email: mode === 'existing' ? email : undefined,
         alternateEmail: alternateEmail.trim() || null,
         storageQuota: storageQuota ? Number(storageQuota) : null,
+        designation: designation.trim() || null,
+        signatureChangeable,
         newMailbox: mode === 'new' ? { localPart: localPart || suggested, domainId: domain?.id } : null,
         mailboxIds: shared,
         password: password.trim(),
@@ -990,6 +1042,10 @@ function CreateUserDialog({
           </Field>
         </div>
         <p className="-mt-2 text-xs text-muted">{role === 'admin' ? 'Admins manage domains, providers, inboxes and users.' : 'Members use their inboxes and nothing else.'}</p>
+
+        <Field label="Designation / Job title" id="designation" hint="Used in company email signatures (e.g. Software Engineer, Sales Manager).">
+          <Input id="designation" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Software Engineer" />
+        </Field>
         
         <ChoiceCards
           value={mode}
@@ -1099,6 +1155,16 @@ function CreateUserDialog({
             >
               Generate
             </Button>
+          </div>
+        </Field>
+
+        <Field label="Email signature policy" hint="Whether this user can customize their signature in webmail settings.">
+          <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
+            <div className="min-w-0 pr-3">
+              <div className="text-[13px] font-medium text-fg">{signatureChangeable ? 'Changeable' : 'Locked'}</div>
+              <div className="text-xs text-muted">{signatureChangeable ? 'Employee can customize their own signature' : 'Company signature template is locked and enforced centrally'}</div>
+            </div>
+            <Switch checked={signatureChangeable} onChange={setSignatureChangeable} label="Signature changeable" />
           </div>
         </Field>
 

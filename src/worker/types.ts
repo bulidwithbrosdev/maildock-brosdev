@@ -11,6 +11,8 @@ export interface SessionUser {
   totpEnabled: boolean;
   preferences: Record<string, unknown>;
   storageQuota?: number | null;
+  designation?: string | null;
+  signatureChangeable?: boolean;
 }
 
 export interface SessionInfo {

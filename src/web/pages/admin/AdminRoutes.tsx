@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router';
-import { Activity, Globe, Inbox, LayoutGrid, Plug, Settings, UsersRound, Waypoints } from 'lucide-react';
+import { Activity, Globe, Inbox, LayoutGrid, PenLine, Plug, Settings, UsersRound, Waypoints } from 'lucide-react';
 import { useSession } from '../../lib/session';
 import { cn } from '../../lib/utils';
 import { useOverview } from './data';
@@ -11,11 +11,13 @@ import { IntegrationsPage } from './IntegrationsPage';
 import { MailFlowPage } from './MailFlowPage';
 import { ActivityPage } from './ActivityPage';
 import { AdminSettingsPage } from './AdminSettingsPage';
+import { SignaturesPage } from './SignaturesPage';
 
 const items = [
   { to: '/admin', label: 'Overview', Icon: LayoutGrid, end: true },
   { to: '/admin/inboxes', label: 'Inboxes', Icon: Inbox },
   { to: '/admin/users', label: 'Users', Icon: UsersRound },
+  { to: '/admin/signatures', label: 'Signatures', Icon: PenLine },
   { to: '/admin/domains', label: 'Domains', Icon: Globe },
   { to: '/admin/integrations', label: 'Integrations', Icon: Plug },
   { to: '/admin/mailflow', label: 'Mail flow', Icon: Waypoints },
@@ -81,6 +83,7 @@ export default function AdminRoutes() {
         <Route path="inboxes/:id" element={<InboxDetailPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="users/:id" element={<UserDetailPage />} />
+        <Route path="signatures" element={<SignaturesPage />} />
         <Route path="domains" element={<DomainsPage />} />
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="mailflow" element={<MailFlowPage />} />

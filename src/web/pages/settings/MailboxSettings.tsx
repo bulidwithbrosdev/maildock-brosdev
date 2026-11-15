@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { zipSync } from 'fflate';
-import { CalendarClock, Download, FileUp, Funnel, PenLine, Plus, Tag, Trash, Forward } from 'lucide-react';
+import { CalendarClock, Download, FileUp, Funnel, Lock, PenLine, Plus, Tag, Trash, Forward } from 'lucide-react';
 import { del, get, patch, post, put, api, errorText } from '../../lib/api';
 import { useAction, useInvalidate } from '../../lib/hooks';
 import { cleanSignature } from '../../lib/sanitize';
+import { useUser } from '../../lib/session';
 import { cn, downloadBlob } from '../../lib/utils';
 import { LABEL_COLORS } from '../../../shared/constants';
 import type { Label, Mailbox } from '../../lib/types';
@@ -92,17 +93,34 @@ function useBoxSettings(box: Mailbox) {
 }
 
 function Signature({ box }: { box: Mailbox }) {
+  const me = useUser();
+  const isLocked = me?.signatureChangeable === false && me?.role === 'member';
   const { s, setS, save, busy } = useBoxSettings(box);
   if (!s) return <PageSpinner />;
   return (
     <Card>
-      <CardHeader icon={<PenLine className="h-5 w-5" />} title="Name and signature" description={box.canSend ? undefined : 'You can read this inbox but not send from it.'} />
+      <CardHeader
+        icon={<PenLine className="h-5 w-5" />}
+        title="Name and signature"
+        description={
+          isLocked
+            ? 'Your signature is centrally managed by your administrator and cannot be modified.'
+            : box.canSend
+            ? undefined
+            : 'You can read this inbox but not send from it.'
+        }
+      />
       <div className="space-y-4 p-5">
+        {isLocked && (
+          <Alert tone="neutral">
+            Your email signature is managed centrally by your administrator. It is automatically added to all outgoing messages from this inbox.
+          </Alert>
+        )}
         <Field label="Sender name">
           <Input value={s.displayName} onChange={(e) => setS({ ...s, displayName: e.target.value })} disabled={!box.canSend} />
         </Field>
-        <Field label="Signature" hint="Plain text or HTML, such as a signature from a generator. Tables, images, links and styles are kept; scripts and positioning are removed.">
-          <Textarea value={s.signature} onChange={(e) => setS({ ...s, signature: e.target.value })} rows={4} className="font-mono text-[13px]" disabled={!box.canSend} />
+        <Field label="Signature" hint={isLocked ? 'Signature editing is locked by admin.' : 'Plain text or HTML, such as a signature from a generator. Tables, images, links and styles are kept; scripts and positioning are removed.'}>
+          <Textarea value={s.signature} onChange={(e) => setS({ ...s, signature: e.target.value })} rows={4} className="font-mono text-[13px]" disabled={!box.canSend || isLocked} />
         </Field>
         {s.signature && (
           <div>
@@ -111,7 +129,7 @@ function Signature({ box }: { box: Mailbox }) {
           </div>
         )}
         <div className="flex justify-end">
-          <Button variant="primary" disabled={!box.canSend} loading={busy === 'sig'} onClick={() => save('sig', { displayName: s.displayName, signature: cleanSignature(s.signature) }, 'Saved')}>
+          <Button variant="primary" disabled={!box.canSend || isLocked} loading={busy === 'sig'} onClick={() => save('sig', { displayName: s.displayName, signature: cleanSignature(s.signature) }, 'Saved')}>
             Save
           </Button>
         </div>

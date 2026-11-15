@@ -423,6 +423,9 @@ mail.patch('/mailboxes/:id/settings', async (c) => {
   const mailboxId = intParam(c, 'id');
   await assertMailbox(c.env.DB, user, mailboxId, true);
   const input = await body(c, updateMailboxSchema.omit({ kind: true }));
+  if (input.signature !== undefined && user.signatureChangeable === false && user.role === 'member') {
+    throw forbidden('Your administrator has locked your email signature and it cannot be modified.');
+  }
   if (input.forwardTo?.length) {
     const known = await all<{ address: string }>(
       c.env.DB,

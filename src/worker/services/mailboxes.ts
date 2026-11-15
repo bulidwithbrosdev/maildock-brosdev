@@ -51,7 +51,7 @@ export async function assertAddressFree(db: D1Database, address: string): Promis
 // Statements that create a mailbox with its primary address; run them in one batch.
 export function mailboxStatements(
   db: D1Database,
-  input: { id?: number; domainId: number; address: string; displayName: string; kind?: 'personal' | 'shared' },
+  input: { id?: number; domainId: number; address: string; displayName: string; kind?: 'personal' | 'shared'; signature?: string },
 ): { mailboxId: number; statements: D1PreparedStatement[] } {
   const mailboxId = input.id ?? newId();
   const now = Date.now();
@@ -59,8 +59,8 @@ export function mailboxStatements(
     mailboxId,
     statements: [
       db
-        .prepare('INSERT INTO mailboxes (id, domain_id, address, display_name, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(mailboxId, input.domainId, input.address, input.displayName, input.kind ?? 'personal', now),
+        .prepare('INSERT INTO mailboxes (id, domain_id, address, display_name, kind, signature, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .bind(mailboxId, input.domainId, input.address, input.displayName, input.kind ?? 'personal', input.signature ?? '', now),
       db
         .prepare('INSERT INTO addresses (id, address, domain_id, mailbox_id, is_primary, created_at) VALUES (?, ?, ?, ?, 1, ?)')
         .bind(newId(), input.address, input.domainId, mailboxId, now),
