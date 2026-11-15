@@ -103,7 +103,7 @@ export interface UserSummary {
   mailboxes: { id: number; address: string; canSend: boolean }[];
   alternateEmail?: string | null;
   storageQuota?: number | null;
-  invitationStatus?: 'none' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed';
+  invitationStatus?: 'none' | 'manual' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed';
   lastInvitationSentAt?: number | null;
 }
 
@@ -133,13 +133,18 @@ export async function listUsers(db: D1Database): Promise<UserSummary[]> {
   const now = Date.now();
   return users.map((u) => {
     const inv = invitations.find((i) => i.user_id === u.id);
-    let invStatus: 'none' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed' = 'none';
+    let invStatus: 'none' | 'manual' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed' = 'none';
     if (inv) {
       if (inv.status === 'sent' && inv.expires_at < now) {
         invStatus = 'expired';
       } else {
         invStatus = inv.status as any;
       }
+    } else {
+      invStatus = u.must_change_password ? 'manual' : 'accepted';
+    }
+    if (!u.must_change_password) {
+      invStatus = 'accepted';
     }
     return {
       id: u.id,
@@ -267,10 +272,11 @@ export async function updateUser(
   }
 }
 
-export async function resetUserPassword(env: Env, actor: SessionUser, id: number, ip: string): Promise<string> {
+export async function resetUserPassword(env: Env, actor: SessionUser, id: number, ip: string, customPassword?: string): Promise<string> {
   const u = await getUser(env.DB, id);
   if (u.role === 'owner' && actor.id !== u.id) throw forbidden('Only the owner can reset the owner password.');
-  const password = generatePassword();
+  const password = customPassword?.trim() || generatePassword();
+  assertPassword(password);
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').bind(await hashPassword(password), id),
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id),

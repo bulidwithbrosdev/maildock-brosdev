@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router';
-import { AlarmClock, Archive, AtSign, CalendarClock, ChevronDown, FileText, Inbox, Layers, Mails, OctagonAlert, Send, Settings, SquarePen, Star, Trash2, UserCheck, UsersRound, X } from 'lucide-react';
+import { AlarmClock, Archive, AtSign, CalendarClock, ChevronDown, FileText, HardDrive, Inbox, Layers, Mails, OctagonAlert, Send, Settings, SquarePen, Star, Trash2, UserCheck, UsersRound, X } from 'lucide-react';
 import { cn, storageGet, storageSet } from '../../lib/utils';
 import { useSession } from '../../lib/session';
 import type { Mailbox } from '../../lib/types';
@@ -97,6 +97,10 @@ export function MailSidebar({
   const totalUnread = mailboxes.reduce((n, m) => n + (m.unread.inbox ?? 0), 0);
   const totalDrafts = mailboxes.reduce((n, m) => n + (m.unread.drafts ?? 0), 0);
   const multi = mailboxes.length > 1;
+
+  const assignedQuotaMB = user?.storageQuota ?? null;
+  const usedBytes = mailboxes.reduce((acc, m) => acc + (m.storageBytes ?? 0), 0);
+  const usedMB = usedBytes / (1024 * 1024);
 
   const item = (mailbox: string, v: string, label: string, Icon: typeof Inbox, opts: { count?: number; strong?: boolean } = {}) => {
     const active = current === mailbox && view === v;
@@ -205,6 +209,27 @@ export function MailSidebar({
         )}
         {mailboxes.length === 0 && <div className="px-3 text-[13px] text-muted">You don't have access to any inbox yet. Ask an admin to add you to one.</div>}
       </nav>
+      {/* Storage quota display */}
+      <div className="border-t border-border px-3 py-2.5">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted">
+          <HardDrive className="h-3.5 w-3.5 text-faint shrink-0" />
+          <span className="flex-1 truncate">Storage</span>
+          <span className="text-[11px] tabular-nums text-faint">
+            {assignedQuotaMB ? `${usedMB < 0.1 && usedMB > 0 ? '< 0.1 MB' : usedMB >= 1024 ? `${(usedMB / 1024).toFixed(1)} GB` : `${usedMB.toFixed(usedMB >= 10 ? 0 : 1)} MB`} / ${assignedQuotaMB >= 1024 ? `${(assignedQuotaMB / 1024).toFixed(1)} GB` : `${assignedQuotaMB} MB`}` : `${usedMB < 0.1 && usedMB > 0 ? '< 0.1 MB' : usedMB >= 1024 ? `${(usedMB / 1024).toFixed(1)} GB` : `${usedMB.toFixed(usedMB >= 10 ? 0 : 1)} MB`} (Unlimited)`}
+          </span>
+        </div>
+        {assignedQuotaMB && assignedQuotaMB > 0 ? (
+          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+            <div
+              className={cn(
+                'h-full rounded-full transition-all duration-300',
+                Math.round((usedMB / assignedQuotaMB) * 100) >= 90 ? 'bg-danger' : Math.round((usedMB / assignedQuotaMB) * 100) >= 75 ? 'bg-warning' : 'bg-primary',
+              )}
+              style={{ width: `${Math.min(100, Math.max(Math.round((usedMB / assignedQuotaMB) * 100), usedBytes > 0 ? 3 : 0))}%` }}
+            />
+          </div>
+        ) : null}
+      </div>
       <div className="hidden border-t border-border p-2 md:block">
         <NavLink to="/settings" onClick={onNavigate} className="flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] text-muted hover:bg-surface-2 hover:text-fg">
           <Settings className="h-[15px] w-[15px] text-faint" /> Settings

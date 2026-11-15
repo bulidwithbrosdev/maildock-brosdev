@@ -23,6 +23,7 @@ export interface SessionUser {
   mustChangePassword: boolean;
   totpEnabled: boolean;
   preferences: Record<string, unknown>;
+  storageQuota?: number | null;
 }
 
 export interface Label {
@@ -42,6 +43,7 @@ export interface Mailbox {
   addresses: { id: number; address: string; isPrimary: boolean; displayName: string | null }[];
   labels: Label[];
   unread: Record<string, number>;
+  storageBytes?: number;
 }
 
 export interface ThreadSummary {
@@ -225,7 +227,7 @@ export interface UserSummary {
   mailboxes: { id: number; address: string; canSend: boolean }[];
   alternateEmail?: string | null;
   storageQuota?: number | null;
-  invitationStatus?: 'none' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed';
+  invitationStatus?: 'none' | 'manual' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed';
   lastInvitationSentAt?: number | null;
 }
 

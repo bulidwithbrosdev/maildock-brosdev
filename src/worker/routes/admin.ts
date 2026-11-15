@@ -36,8 +36,8 @@ import { audit } from '../services/audit';
 import { overview } from '../services/overview';
 import { cloudflareUsage, growthEstimate, storageSummary } from '../services/usage';
 import { checkForUpdate } from '../services/updates';
-import { createUser, deleteUser, listUsers, resetUserPassword, resetUserTotp, updateUser } from '../services/users';
-import { sendInvitation } from '../services/invitations';
+import { createUser, deleteUser, getUser, listUsers, resetUserPassword, resetUserTotp, updateUser } from '../services/users';
+import { sendInvitation, sendPasswordReset } from '../services/invitations';
 import { createSubdomain, getSubdomainProvisionStatus, provisionSubdomain } from '../services/subdomains';
 import {
   addAlias,
@@ -135,7 +135,25 @@ admin.patch('/users/:id', async (c) => {
 });
 
 admin.post('/users/:id/reset-password', async (c) => {
-  return c.json({ password: await resetUserPassword(c.env, currentUser(c), intParam(c, 'id'), clientIp(c)) });
+  const bodyData = await c.req.json().catch(() => ({}));
+  const origin = new URL(c.req.url).origin;
+  const userId = intParam(c, 'id');
+  const user = await getUser(c.env.DB, userId);
+  const recipientEmail = (bodyData.alternateEmail?.trim() || user.alternate_email || '').toLowerCase().trim();
+  if (bodyData.sendEmail && recipientEmail) {
+    const result = await sendPasswordReset(
+      c.env,
+      currentUser(c),
+      userId,
+      recipientEmail,
+      origin,
+      clientIp(c),
+      bodyData.password,
+    );
+    return c.json({ password: result.password, emailSent: result.ok, recipientEmail });
+  }
+  const password = await resetUserPassword(c.env, currentUser(c), userId, clientIp(c), bodyData.password);
+  return c.json({ password, emailSent: false });
 });
 
 admin.post('/users/:id/reset-2fa', async (c) => {

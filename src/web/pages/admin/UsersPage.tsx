@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, AtSign, CircleCheck, Clock, Copy, Crown, Eye, EyeOff, KeyRound, Mail, RotateCw, Search, ShieldCheck, ShieldOff, UserPlus, UsersRound } from 'lucide-react';
+import { ArrowLeft, AtSign, CircleCheck, Clock, Copy, Crown, Eye, EyeOff, KeyRound, LoaderCircle, Mail, RotateCw, Search, ShieldCheck, ShieldOff, UserCheck, UserPlus, UsersRound, UserX } from 'lucide-react';
 import { del, get, patch, post, put, errorText } from '../../lib/api';
 import { timeAgo } from '../../lib/format';
 import { useAction, useInvalidate } from '../../lib/hooks';
@@ -9,11 +9,11 @@ import { useUser } from '../../lib/session';
 import { cn, copyText, generateRandomPassword } from '../../lib/utils';
 import type { DomainInfo, MailboxAdmin, UserSummary } from '../../lib/types';
 import { Button } from '../../components/ui/button';
-import { AddressInput, ChoiceCards, Field, Input, SegmentedControl, Select, Switch, Tick } from '../../components/ui/form';
+import { AddressInput, Checkbox, ChoiceCards, Field, Input, SegmentedControl, Select, Switch, Tick } from '../../components/ui/form';
 import { Alert, Avatar, Badge, Card, CardHeader, CopyButton, EmptyState, PageHeader, PageSpinner } from '../../components/ui/misc';
 import { ConfirmDialog, Dialog, useToast } from '../../components/ui/overlay';
 
-const grid = 'grid grid-cols-[minmax(0,1fr)_120px] items-center gap-3 px-5 md:grid-cols-[minmax(0,2fr)_85px_95px_120px_minmax(0,1fr)_190px]';
+const grid = 'grid grid-cols-[minmax(0,1fr)_44px] items-center gap-3 px-5 md:grid-cols-[minmax(0,2fr)_85px_95px_110px_minmax(0,1fr)_48px]';
 
 type RoleFilter = 'all' | 'admins' | 'members' | 'disabled';
 
@@ -115,7 +115,7 @@ export function UsersPage() {
               <span>Status</span>
               <span>Invitation</span>
               <span>Last sign-in</span>
-              <span className="text-right pr-2">Actions</span>
+              <span className="text-right pr-1">Action</span>
             </div>
             {shown.map((u) => (
               <div
@@ -165,6 +165,10 @@ export function UsersPage() {
                     <Badge tone="success" pill>
                       Accepted
                     </Badge>
+                  ) : u.invitationStatus === 'manual' ? (
+                    <Badge tone="neutral" pill>
+                      Manual
+                    </Badge>
                   ) : u.invitationStatus === 'sent' ? (
                     <>
                       <Badge tone="primary" pill>
@@ -185,36 +189,24 @@ export function UsersPage() {
                       Failed
                     </Badge>
                   ) : (
-                    <span className="text-xs text-faint">None</span>
+                    <Badge tone="neutral" pill>
+                      Manual
+                    </Badge>
                   )}
                 </div>
 
                 <span className="hidden truncate text-[12.5px] text-muted md:block">{lastSignIn(u)}</span>
 
-                <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => navigate(`/admin/users/${u.id}`)}
-                    title="Edit user"
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="secondary"
-                    icon={<Mail className="h-3 w-3" />}
-                    onClick={() => setInvitingUser(u)}
-                    title={u.invitationStatus === 'sent' || u.invitationStatus === 'expired' ? 'Resend invitation' : 'Send Credentials'}
-                  >
-                    {u.invitationStatus === 'sent' || u.invitationStatus === 'expired' ? 'Resend' : 'Send Credentials'}
-                  </Button>
-                  {u.role !== 'owner' && u.id !== me?.id && (
+                <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+                  {u.role !== 'owner' && u.id !== me?.id ? (
                     <Button
                       size="xs"
                       variant="ghost"
-                      className={u.status === 'active' ? 'text-muted hover:text-danger' : 'text-success'}
+                      icon={u.status === 'active' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                      className={u.status === 'active' ? 'text-muted hover:text-danger hover:bg-danger/10' : 'text-success hover:bg-success/10'}
                       loading={busy === `status-${u.id}`}
+                      title={u.status === 'active' ? 'Disable user' : 'Enable user'}
+                      aria-label={u.status === 'active' ? 'Disable user' : 'Enable user'}
                       onClick={() =>
                         run(
                           `status-${u.id}`,
@@ -222,9 +214,9 @@ export function UsersPage() {
                           u.status === 'active' ? 'User disabled' : 'User enabled',
                         )
                       }
-                    >
-                      {u.status === 'active' ? 'Disable' : 'Enable'}
-                    </Button>
+                    />
+                  ) : (
+                    <span className="w-7 h-7" />
                   )}
                 </div>
               </div>
@@ -289,6 +281,7 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
   const [secret, setSecret] = useState<{ id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; credentialsSent?: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const { run, busy } = useAction();
   const isOwner = user.role === 'owner';
   const isMe = user.id === me?.id;
@@ -458,13 +451,15 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
             value={
               user.invitationStatus === 'accepted'
                 ? 'Accepted'
+                : user.invitationStatus === 'manual'
+                ? 'Manual'
                 : user.invitationStatus === 'sent'
                 ? `Sent ${user.lastInvitationSentAt ? `(${timeAgo(user.lastInvitationSentAt)})` : ''}`
                 : user.invitationStatus === 'expired'
                 ? 'Expired'
                 : user.invitationStatus === 'failed'
                 ? 'Delivery failed'
-                : 'Not sent'
+                : 'Manual'
             }
             tone={user.invitationStatus === 'accepted' ? 'success' : user.invitationStatus === 'failed' ? 'danger' : undefined}
           >
@@ -485,14 +480,7 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
             <Button
               size="xs"
               disabled={isOwner && !isMe}
-              loading={busy === 'reset'}
-              onClick={() =>
-                run('reset', async () => {
-                  const r = await post<{ password: string }>(`/admin/users/${user.id}/reset-password`);
-                  setSecret({ id: user.id, name: user.name, email: user.email, password: r.password, alternateEmail: user.alternateEmail });
-                  await refresh();
-                })
-              }
+              onClick={() => setResettingPassword(true)}
             >
               Reset
             </Button>
@@ -518,6 +506,23 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
           initialPassword={secret?.password}
           onClose={() => setInviting(false)}
           onSent={refresh}
+        />
+      )}
+      {resettingPassword && (
+        <ResetPasswordDialog
+          user={user}
+          onClose={() => setResettingPassword(false)}
+          onSuccess={(newPassword, emailSent, recipient) => {
+            setSecret({
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              password: newPassword,
+              alternateEmail: emailSent ? recipient : null,
+              credentialsSent: emailSent,
+            });
+            refresh();
+          }}
         />
       )}
       {secret && (
@@ -692,10 +697,10 @@ function SecretDialog({
       size="sm"
       icon={<CircleCheck />}
       tone="success"
-      title={secret.credentialsSent ? 'Account created & credentials sent' : 'Share these sign-in details'}
+      title={secret.credentialsSent ? 'Credentials sent via email' : 'Share these sign-in details'}
       description={
         secret.credentialsSent
-          ? `Login credentials with a temporary password were sent to ${secret.alternateEmail}. When ${secret.name?.split(' ')[0] || 'they'} sign in, they will create their own password.`
+          ? `Login credentials and temporary password were sent to ${secret.alternateEmail}. When ${secret.name?.split(' ')[0] || 'they'} sign in, they will create their own password.`
           : `Send these credentials to ${secret.name?.split(' ')[0] || 'them'} privately. The temporary password works once; they'll choose their own password upon first sign-in.`
       }
       footer={
@@ -743,6 +748,141 @@ function SecretDialog({
         ))}
       </div>
     </Dialog>
+  );
+}
+
+function ResetPasswordDialog({
+  user,
+  onClose,
+  onSuccess,
+}: {
+  user: UserSummary;
+  onClose: () => void;
+  onSuccess: (password: string, emailSent: boolean, recipientEmail?: string) => void;
+}) {
+  const [password, setPassword] = useState(() => generateRandomPassword());
+  const [showPassword, setShowPassword] = useState(true);
+  const [sendEmail, setSendEmail] = useState(true);
+  const [alternateEmail, setAlternateEmail] = useState(user.alternateEmail || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const toast = useToast();
+
+  const handleReset = async () => {
+    if (!password.trim() || password.length < 10) {
+      setError('Password must be at least 10 characters long.');
+      return;
+    }
+    if (sendEmail && !alternateEmail.trim()) {
+      setError('Please provide an alternate email address to deliver the password reset email.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const res = await post<{ password: string; emailSent?: boolean; recipientEmail?: string }>(
+        `/admin/users/${user.id}/reset-password`,
+        {
+          password: password.trim(),
+          sendEmail,
+          alternateEmail: sendEmail ? alternateEmail.trim() : undefined,
+        },
+      );
+      toast.success(sendEmail ? 'Password reset and email delivered' : 'Password reset successfully');
+      onSuccess(res.password || password.trim(), !!res.emailSent, res.recipientEmail || alternateEmail.trim());
+      onClose();
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ConfirmDialog
+      open
+      onClose={onClose}
+      title={`Reset password for ${user.name || user.email}?`}
+      confirmLabel="Reset password"
+      loading={busy}
+      onConfirm={handleReset}
+    >
+      <div className="space-y-3.5 text-[13px]">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <p className="text-muted">
+          Generate or set a new temporary password. The user will be required to choose a new password on their next sign-in.
+        </p>
+        <Field
+          label="New temporary password"
+          hint="First randomly generated. You can click Generate to create a new one, or type your own."
+        >
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 pr-16 text-[13px] font-mono tracking-wide text-fg placeholder:text-faint focus:border-primary focus:outline-none focus:ring-3 focus:ring-[var(--ring)]"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter or generate password"
+                minLength={10}
+                required
+              />
+              <div className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="flex h-7 w-7 items-center justify-center rounded text-faint hover:text-fg"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => {
+                    copyText(password).then(() => toast.success('Password copied'));
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded text-faint hover:text-fg"
+                  title="Copy password"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={<RotateCw className="h-3.5 w-3.5" />}
+              onClick={() => setPassword(generateRandomPassword())}
+              title="Generate new random password"
+            >
+              Generate
+            </Button>
+          </div>
+        </Field>
+
+        <div className="space-y-2 pt-1">
+          <Checkbox
+            checked={sendEmail}
+            onChange={setSendEmail}
+            label="Send password reset email to user"
+            hint="Delivers temporary password and login instructions to their alternate email."
+          />
+          {sendEmail && (
+            <Field label="Deliver to alternate / recovery email" hint="Personal email address where password reset details will be sent.">
+              <Input
+                type="email"
+                required
+                value={alternateEmail}
+                onChange={(e) => setAlternateEmail(e.target.value)}
+                placeholder="e.g. user.personal@gmail.com"
+              />
+            </Field>
+          )}
+        </div>
+      </div>
+    </ConfirmDialog>
   );
 }
 

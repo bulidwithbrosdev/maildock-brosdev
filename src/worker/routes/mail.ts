@@ -37,7 +37,7 @@ mail.get('/mailboxes', async (c) => {
   const access = await accessibleMailboxes(c.env.DB, user);
   if (!access.length) return c.json([]);
   const ids = access.map((a) => a.mailboxId);
-  const [boxes, addresses, labels, unread] = await Promise.all([
+  const [boxes, addresses, labels, unread, storageRows] = await Promise.all([
     all<{ id: number; address: string; display_name: string; kind: string; signature: string; state: number }>(
       c.env.DB,
       `SELECT id, address, display_name, kind, signature, state FROM mailboxes WHERE id IN (${placeholders(ids.length)}) ORDER BY address`,
@@ -54,6 +54,11 @@ mail.get('/mailboxes', async (c) => {
       ...ids,
     ),
     unreadCounts(c.env.DB, ids),
+    all<{ mailbox_id: number; bytes: number }>(
+      c.env.DB,
+      `SELECT mailbox_id, COALESCE(SUM(size), 0) AS bytes FROM messages WHERE mailbox_id IN (${placeholders(ids.length)}) GROUP BY mailbox_id`,
+      ...ids,
+    ).catch(() => []),
   ]);
   return c.json(
     boxes.map((b) => ({
@@ -67,6 +72,7 @@ mail.get('/mailboxes', async (c) => {
       addresses: addresses.filter((a) => a.mailbox_id === b.id).map((a) => ({ id: a.id, address: a.address, isPrimary: !!a.is_primary, displayName: a.display_name })),
       labels: labels.filter((l) => l.mailbox_id === b.id).map((l) => ({ id: l.id, name: l.name, color: l.color })),
       unread: unread[b.id] ?? {},
+      storageBytes: storageRows.find((s) => s.mailbox_id === b.id)?.bytes ?? 0,
     })),
   );
 });

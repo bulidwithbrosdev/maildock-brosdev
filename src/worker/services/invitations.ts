@@ -444,3 +444,259 @@ export async function acceptInvitation(
   return { ok: true, email: row.email };
 }
 
+export function renderPasswordResetEmail({
+  userName,
+  mailboxEmail,
+  webmailUrl,
+  password,
+  senderName,
+  senderEmail,
+}: {
+  userName: string;
+  mailboxEmail: string;
+  webmailUrl: string;
+  password: string;
+  senderName?: string;
+  senderEmail?: string;
+}): { subject: string; html: string; text: string } {
+  const subject = 'Password Reset - Your Temporary Password';
+  const domain = mailboxEmail.includes('@') ? mailboxEmail.split('@')[1] : 'yourdomain.com';
+  const firstName = userName?.trim() ? userName.trim().split(/\s+/)[0] : mailboxEmail.split('@')[0];
+  const loginUrl = `${webmailUrl.replace(/\/+$/, '')}/login`;
+  const adminContactName = senderName?.trim() || 'Administrator';
+  const adminContactEmail = senderEmail?.trim() || `admin@${domain}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${subject}</title>
+</head>
+<body style="margin:0;padding:0;background:#f5f5f5;">
+<!-- Hidden preview text shown in the inbox list -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f5f5f5;">Your temporary password for Brosdev Solutions email account.</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;">
+<tr><td align="center" style="padding:24px 12px;">
+
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#000000;">
+
+  <!-- Header -->
+  <tr><td style="background:#000000;padding:26px 32px;border-bottom:4px solid #A90706;">
+    <div style="font-size:22px;font-weight:bold;letter-spacing:3px;color:#ffffff;">BROSDEV</div>
+    <div style="font-size:11px;letter-spacing:2px;color:#8A8A8A;">SOLUTIONS</div>
+  </td></tr>
+
+  <!-- Title -->
+  <tr><td style="padding:36px 32px 8px 32px;">
+    <div style="display:inline-block;background:#fef2f2;border:1px solid #fecaca;color:#A90706;font-size:12px;font-weight:bold;padding:3px 10px;border-radius:4px;margin-bottom:12px;letter-spacing:0.5px;">SECURITY ALERT</div>
+    <h1 style="margin:0;font-size:26px;line-height:1.25;font-weight:bold;color:#000000;">Password Reset Request</h1>
+  </td></tr>
+
+  <!-- Intro -->
+  <tr><td style="padding:12px 32px 8px 32px;font-size:15px;line-height:1.6;color:#333333;">
+    Hi ${firstName},<br><br>
+    Your account password for Brosdev Solutions on Maildock has been reset by an administrator. Please use the temporary credentials below to sign in and set up your new password.
+  </td></tr>
+
+  <!-- Account details -->
+  <tr><td style="padding:16px 32px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;border-left:4px solid #A90706;">
+      <tr><td style="padding:18px 20px;font-size:14px;line-height:1.8;color:#000000;">
+        <span style="color:#555555;">Email address</span><br>
+        <strong style="font-size:16px;">${mailboxEmail}</strong><br>
+        <span style="color:#555555;">Sign-in page (Maildock)</span><br>
+        <a href="${loginUrl}" style="color:#A90706;text-decoration:underline;">${loginUrl}</a><br>
+        <span style="color:#555555;">Temporary password</span><br>
+        <strong style="font-family:'Courier New',Courier,monospace;font-size:16px;letter-spacing:1px;background:#ffffff;border:1px solid #d9d9d9;padding:4px 10px;display:inline-block;margin-top:2px;">${password}</strong><br>
+        <span style="font-size:12px;color:#A90706;font-weight:600;">You will be required to choose a new password the moment you sign in.</span>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Button -->
+  <tr><td align="left" style="padding:8px 32px 24px 32px;">
+    <a href="${loginUrl}" style="display:inline-block;background:#A90706;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:14px 28px;">Sign in &amp; Choose New Password</a>
+  </td></tr>
+
+  <!-- Security steps -->
+  <tr><td style="padding:0 32px 8px 32px;">
+    <h2 style="margin:0 0 10px 0;font-size:18px;color:#000000;">Important Security Instructions</h2>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;line-height:1.6;color:#333333;">
+      <tr><td valign="top" style="padding:0 12px 10px 0;color:#A90706;font-weight:bold;">1.</td><td style="padding-bottom:10px;"><strong>Sign in immediately</strong> using the temporary password above.</td></tr>
+      <tr><td valign="top" style="padding:0 12px 10px 0;color:#A90706;font-weight:bold;">2.</td><td style="padding-bottom:10px;"><strong>Create a strong password</strong> with at least 10 characters that you do not use on other services.</td></tr>
+      <tr><td valign="top" style="padding:0 12px 10px 0;color:#A90706;font-weight:bold;">3.</td><td style="padding-bottom:10px;"><strong>Delete this email</strong> once you have successfully signed in and set your new password.</td></tr>
+      <tr><td valign="top" style="padding:0 12px 10px 0;color:#A90706;font-weight:bold;">4.</td><td style="padding-bottom:10px;">If you did not expect this reset, contact your administrator right away.</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Help -->
+  <tr><td style="padding:20px 32px 28px 32px;font-size:14px;line-height:1.6;color:#333333;">
+    Questions or need help? Contact ${adminContactName} at <a href="mailto:${adminContactEmail}" style="color:#A90706;">${adminContactEmail}</a>.<br><br>
+    Regards,<br>
+    <strong>${adminContactName}</strong><br>
+    IT Administration, Brosdev Solutions
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="background:#000000;padding:20px 32px;font-size:11px;line-height:1.6;color:#8A8A8A;">
+    <span style="color:#ffffff;font-weight:bold;">Secured by Maildock</span> &middot; Your own email, on your own domains.<br><br>
+    Brosdev Solutions<br>
+    This automated security message is intended only for ${firstName}. If you received it by mistake, please notify us immediately and delete it.
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+
+  const text = `Password Reset - Your Temporary Password
+
+Hi ${firstName},
+
+Your account password for Brosdev Solutions on Maildock has been reset by an administrator.
+
+Account details:
+- Email address: ${mailboxEmail}
+- Sign-in page (Maildock): ${loginUrl}
+- Temporary password: ${password}
+(You will be required to choose a new password the moment you sign in.)
+
+Sign in to your account: ${loginUrl}
+
+Security instructions:
+1. Sign in immediately using the temporary password.
+2. Create a strong password with at least 10 characters.
+3. Delete this email once you have successfully updated your password.
+4. If you did not expect this reset, contact your administrator immediately.
+
+Need help? Contact ${adminContactName} at ${adminContactEmail}.
+
+Regards,
+${adminContactName}
+IT Administration, Brosdev Solutions
+
+--
+Secured by Maildock · Your own email, on your own domains.
+This automated security message is intended only for ${firstName}.`;
+
+  return { subject, html, text };
+}
+
+export async function sendPasswordReset(
+  env: Env,
+  actor: SessionUser | null,
+  userId: number,
+  overrideAlternateEmail?: string | null,
+  origin?: string,
+  ip = '127.0.0.1',
+  customPassword?: string,
+): Promise<{ ok: boolean; status: 'sent' | 'failed'; error?: string; password: string; sentAt: number; recipientEmail: string }> {
+  const user = await getUser(env.DB, userId);
+  const settings = await loadSettings(env.DB);
+  const now = Date.now();
+
+  const recipientEmail = (overrideAlternateEmail?.trim() || user.alternate_email || '').toLowerCase().trim();
+  if (!recipientEmail || !isValidAddress(recipientEmail)) {
+    throw badRequest('Please provide a valid alternate email address to receive the password reset.', 'no_recipient_email');
+  }
+
+  // Update user's alternate_email if changed
+  if (overrideAlternateEmail && overrideAlternateEmail.trim().toLowerCase() !== user.alternate_email?.toLowerCase()) {
+    await run(env.DB, 'UPDATE users SET alternate_email = ? WHERE id = ?', recipientEmail, userId);
+  }
+
+  // Password handling
+  const password = customPassword?.trim() || generatePassword();
+  const problem = passwordProblem(password);
+  if (problem) throw badRequest(problem, 'weak_password');
+
+  // Update the user's password in the database and ensure must_change_password = 1
+  const passwordHash = await hashPassword(password);
+  await env.DB.batch([
+    env.DB.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').bind(passwordHash, userId),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
+  ]);
+
+  const baseOrigin = settings.appUrl || origin || 'http://localhost:5173';
+  const webmailUrl = baseOrigin.replace(/\/+$/, '');
+  const fromDomain = domainOf(user.email);
+
+  const emailContent = renderPasswordResetEmail({
+    userName: user.name,
+    mailboxEmail: user.email,
+    webmailUrl,
+    password,
+    senderName: actor?.name,
+    senderEmail: actor?.email || `admin@${fromDomain}`,
+  });
+
+  const from: Address = {
+    name: settings.instanceName || 'Maildock',
+    address: `no-reply@${fromDomain}`,
+  };
+  const to: Address[] = [{ name: user.name || recipientEmail, address: recipientEmail }];
+  const messageId = newMessageId(fromDomain);
+
+  let deliveryStatus: 'sent' | 'failed' = 'sent';
+  let deliveryError: string | undefined;
+
+  try {
+    const provider = await findOutboundProvider(env.DB, fromDomain);
+    if (provider) {
+      const adapter = await adapterFor(env, provider);
+      const raw = buildMime({
+        from,
+        to,
+        subject: emailContent.subject,
+        text: emailContent.text,
+        html: emailContent.html,
+        messageId,
+        date: new Date(now),
+      });
+      const outgoing: OutgoingMessage = {
+        from,
+        to,
+        cc: [],
+        bcc: [],
+        subject: emailContent.subject,
+        text: emailContent.text,
+        html: emailContent.html,
+        messageId,
+        references: [messageId],
+        attachments: [],
+        raw,
+      };
+      await adapter.send(outgoing);
+      log('password_reset.sent', { userId, recipient: recipientEmail, provider: provider.type });
+    } else {
+      log('password_reset.simulated', { userId, recipient: recipientEmail, password });
+    }
+  } catch (err) {
+    deliveryStatus = 'failed';
+    deliveryError = errorMessage(err);
+    logError('password_reset.delivery_failed', err, { userId, recipient: recipientEmail });
+  }
+
+  if (actor) {
+    await audit(env.DB, {
+      userId: actor.id,
+      action: 'user.password_reset',
+      target: user.email,
+      details: { recipientEmail, status: deliveryStatus, error: deliveryError },
+      ip,
+    });
+  }
+
+  return {
+    ok: deliveryStatus === 'sent',
+    status: deliveryStatus,
+    error: deliveryError,
+    password,
+    sentAt: now,
+    recipientEmail,
+  };
+}
+

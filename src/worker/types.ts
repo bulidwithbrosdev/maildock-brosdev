@@ -10,6 +10,7 @@ export interface SessionUser {
   mustChangePassword: boolean;
   totpEnabled: boolean;
   preferences: Record<string, unknown>;
+  storageQuota?: number | null;
 }
 
 export interface SessionInfo {

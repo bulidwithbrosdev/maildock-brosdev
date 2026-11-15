@@ -25,6 +25,7 @@ interface SessionRow {
   must_change_password: number;
   totp_enabled: number;
   preferences: string;
+  storage_quota: number | null;
 }
 
 function secure(c: Context): boolean {
@@ -65,7 +66,7 @@ export async function loadSession(c: Context<AppBindings>): Promise<{ user: Sess
   const id = await sha256Hex(token);
   const row = await c.env.DB.prepare(
     `SELECT s.id, s.user_id, s.mfa_pending, s.expires_at, s.last_seen_at, u.email, u.name, u.role, u.status,
-            u.must_change_password, u.totp_enabled, u.preferences
+            u.must_change_password, u.totp_enabled, u.preferences, u.storage_quota
        FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`,
   )
     .bind(id)
@@ -91,6 +92,7 @@ export async function loadSession(c: Context<AppBindings>): Promise<{ user: Sess
       mustChangePassword: !!row.must_change_password,
       totpEnabled: !!row.totp_enabled,
       preferences: parseJson(row.preferences, {}),
+      storageQuota: row.storage_quota ?? null,
     },
   };
 }
