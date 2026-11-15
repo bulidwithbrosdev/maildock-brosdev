@@ -25,6 +25,7 @@ import { counterStmt, dailyStatStmt, inboundLogStmt, logInbound } from './stats'
 import { bumpState, type AutoReply } from './mailboxes';
 import { maybeAutoReply } from './autoreply';
 import { noteSenderStmt, senderDomain } from './sender-logos';
+import { isSenderBlocked } from './blocked';
 
 export interface Recipient {
   mailboxId: number;
@@ -48,27 +49,6 @@ export async function resolveRecipient(db: D1Database, rcpt: string): Promise<Re
   );
   if (domain?.catch_all_mailbox_id && domain.status !== 'disabled') return { mailboxId: domain.catch_all_mailbox_id, address, via: 'catchall' };
   return null;
-}
-
-async function isBlocked(db: D1Database, mailboxId: number, from: string): Promise<boolean> {
-  // If the mailbox's members have block_senders_enabled = 0, bypass the block check!
-  const members = await all<{ block_senders_enabled: number | null }>(
-    db,
-    'SELECT u.block_senders_enabled FROM mailbox_members mm JOIN users u ON u.id = mm.user_id WHERE mm.mailbox_id = ?',
-    mailboxId,
-  ).catch(() => []);
-  if (members.length > 0 && members.every((m) => m.block_senders_enabled === 0)) {
-    return false;
-  }
-
-  const row = await first(
-    db,
-    'SELECT id FROM blocked_senders WHERE (mailbox_id IS NULL OR mailbox_id = ?) AND pattern IN (?, ?) LIMIT 1',
-    mailboxId,
-    from,
-    `@${domainOf(from)}`,
-  );
-  return !!row;
 }
 
 export interface ParsedMessage {
@@ -188,7 +168,10 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env, ct
   if (size > limit) return reject(`Message too large (limit ${settings.maxInboundMb} MB).`);
   const recipient = await resolveRecipient(env.DB, rcpt);
   if (!recipient) return reject('550 5.1.1 Unknown recipient.');
-  if (envelopeFrom && (await isBlocked(env.DB, recipient.mailboxId, envelopeFrom))) return reject('Message rejected by the recipient.');
+  if (envelopeFrom) {
+    const check = await isSenderBlocked(env.DB, recipient.mailboxId, envelopeFrom);
+    if (check.blocked) return reject('Message rejected by the recipient.');
+  }
 
   const bytes = new Uint8Array(await new Response(message.raw).arrayBuffer());
   await ingest({ env, settings }, bytes, { rcpt, envelopeFrom, recipient, message, ctx });
@@ -233,6 +216,15 @@ export async function ingest(c: Context, bytes: Uint8Array, o: IngestOptions): P
   }
   const p = readParsed(s, o.envelopeFrom);
   const mailboxId = o.recipient.mailboxId;
+
+  // Header From check (covers messages where SMTP envelope differs from MIME From, or imported/forwarded mail)
+  const fromCheck = await isSenderBlocked(env.DB, mailboxId, p.from.address);
+  if (fromCheck.blocked) {
+    if (o.message) o.message.setReject('Message rejected by the recipient.');
+    await deleteRaw(c, rawKey, rawStore);
+    await logInbound(env.DB, { from: p.from.address, to: o.rcpt, subject: p.subject, size: bytes.byteLength, status: 'rejected', reason: `Blocked sender (${fromCheck.pattern})` }, true);
+    return { status: 'rejected' };
+  }
 
   if (p.messageId) {
     const dup = await first(env.DB, "SELECT id FROM messages WHERE mailbox_id = ? AND message_id = ? AND direction = 'in'", mailboxId, p.messageId);

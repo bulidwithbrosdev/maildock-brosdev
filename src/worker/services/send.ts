@@ -23,6 +23,7 @@ import { adapterFor, type ProviderRow } from '../providers';
 import { ProviderError, type OutgoingAttachment, type OutgoingMessage } from '../providers/types';
 import { fitBody } from './bodies';
 import { quotaStmt, quotaUse, remaining } from './quota';
+import { isSenderBlocked } from './blocked';
 import { counterStmt, dailyStatStmt } from './stats';
 import { bumpState } from './mailboxes';
 import { mergeParticipants } from './inbound';
@@ -254,6 +255,13 @@ export async function sendDraft(env: Env, user: SessionUser, id: number, sendAt?
   if (!access.can_send) throw new HttpError(403, 'forbidden', 'You can read this mailbox but not send from it.');
   const recipients = [...parseJson<Address[]>(m.to_addrs, []), ...parseJson<Address[]>(m.cc_addrs, []), ...parseJson<Address[]>(m.bcc_addrs, [])];
   if (!recipients.length) throw badRequest('Add at least one recipient.');
+
+  for (const rcpt of recipients) {
+    const blockCheck = await isSenderBlocked(db, m.mailbox_id, rcpt.address);
+    if (blockCheck.blocked) {
+      throw badRequest(`Cannot send to blocked address: ${rcpt.address} (matches "${blockCheck.pattern}").`);
+    }
+  }
   if (sendAt && sendAt > Date.now() + MINUTE) {
     await db.batch([
       db.prepare("UPDATE messages SET status = 'scheduled', send_at = ?, sent_by = ? WHERE id = ?").bind(sendAt, user.id, id),

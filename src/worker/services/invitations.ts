@@ -15,6 +15,7 @@ import type { SessionUser } from '../types';
 import type { OutgoingMessage } from '../providers/types';
 import { PROVIDER_INFO } from '../../shared/constants';
 import { log, logError } from '../lib/log';
+import { isSenderBlocked } from './blocked';
 
 export const INVITATION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const RESEND_COOLDOWN_MS = 60 * 1000; // 60 seconds
@@ -262,6 +263,14 @@ export async function sendInvitation(
   const recipientEmail = (overrideAlternateEmail?.trim() || user.alternate_email || '').toLowerCase().trim();
   if (!recipientEmail || !isValidAddress(recipientEmail)) {
     throw badRequest('Please provide a valid alternate email address to receive the credentials.', 'no_recipient_email');
+  }
+
+  const blockCheck = await isSenderBlocked(env.DB, null, recipientEmail);
+  if (blockCheck.blocked) {
+    throw badRequest(
+      `Cannot send login credentials to "${recipientEmail}": this address or domain is in the Blocked Senders list (${blockCheck.pattern}). Unblock it in Settings > Blocked senders if you need to deliver credentials.`,
+      'recipient_blocked',
+    );
   }
 
   // Update user's alternate_email if changed
@@ -601,6 +610,14 @@ export async function sendPasswordReset(
   const recipientEmail = (overrideAlternateEmail?.trim() || user.alternate_email || '').toLowerCase().trim();
   if (!recipientEmail || !isValidAddress(recipientEmail)) {
     throw badRequest('Please provide a valid alternate email address to receive the password reset.', 'no_recipient_email');
+  }
+
+  const blockCheck = await isSenderBlocked(env.DB, null, recipientEmail);
+  if (blockCheck.blocked) {
+    throw badRequest(
+      `Cannot send password reset to "${recipientEmail}": this address or domain is in the Blocked Senders list (${blockCheck.pattern}). Unblock it in Settings > Blocked senders if you need to deliver credentials.`,
+      'recipient_blocked',
+    );
   }
 
   // Update user's alternate_email if changed
