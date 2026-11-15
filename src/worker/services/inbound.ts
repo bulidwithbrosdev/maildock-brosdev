@@ -168,9 +168,24 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env, ct
   if (size > limit) return reject(`Message too large (limit ${settings.maxInboundMb} MB).`);
   const recipient = await resolveRecipient(env.DB, rcpt);
   if (!recipient) return reject('550 5.1.1 Unknown recipient.');
+
+  // 1. Check envelope sender (SMTP Return-Path / MAIL FROM)
   if (envelopeFrom) {
     const check = await isSenderBlocked(env.DB, recipient.mailboxId, envelopeFrom);
     if (check.blocked) return reject('Message rejected by the recipient.');
+  }
+
+  // 2. Check MIME headers directly from Cloudflare message before parsing raw body
+  if (message.headers) {
+    for (const h of ['from', 'sender', 'reply-to']) {
+      const val = message.headers.get(h);
+      if (val) {
+        for (const addr of parseAddressList(val)) {
+          const check = await isSenderBlocked(env.DB, recipient.mailboxId, addr.address);
+          if (check.blocked) return reject('Message rejected by the recipient.');
+        }
+      }
+    }
   }
 
   const bytes = new Uint8Array(await new Response(message.raw).arrayBuffer());
