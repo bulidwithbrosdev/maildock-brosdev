@@ -51,6 +51,16 @@ export async function resolveRecipient(db: D1Database, rcpt: string): Promise<Re
 }
 
 async function isBlocked(db: D1Database, mailboxId: number, from: string): Promise<boolean> {
+  // If the mailbox's members have block_senders_enabled = 0, bypass the block check!
+  const members = await all<{ block_senders_enabled: number | null }>(
+    db,
+    'SELECT u.block_senders_enabled FROM mailbox_members mm JOIN users u ON u.id = mm.user_id WHERE mm.mailbox_id = ?',
+    mailboxId,
+  ).catch(() => []);
+  if (members.length > 0 && members.every((m) => m.block_senders_enabled === 0)) {
+    return false;
+  }
+
   const row = await first(
     db,
     'SELECT id FROM blocked_senders WHERE (mailbox_id IS NULL OR mailbox_id = ?) AND pattern IN (?, ?) LIMIT 1',

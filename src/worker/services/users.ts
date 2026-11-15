@@ -33,6 +33,7 @@ export interface UserRow {
   storage_quota?: number | null;
   designation?: string | null;
   signature_changeable?: number | null;
+  block_senders_enabled?: number | null;
 }
 
 export async function getUser(db: D1Database, id: number): Promise<UserRow> {
@@ -166,6 +167,7 @@ export async function listUsers(db: D1Database): Promise<UserSummary[]> {
       storageQuota: u.storage_quota ?? null,
       designation: u.designation ?? null,
       signatureChangeable: u.signature_changeable !== 0,
+      blockSendersEnabled: u.block_senders_enabled !== 0,
       invitationStatus: invStatus,
       lastInvitationSentAt: inv?.sent_at ?? null,
     };
@@ -182,6 +184,7 @@ export interface CreateUserInput {
   storageQuota?: number | null;
   designation?: string | null;
   signatureChangeable?: boolean;
+  blockSendersEnabled?: boolean;
   newMailbox?: { localPart: string; domainId: number } | null;
   mailboxIds?: number[];
   password?: string;
@@ -204,6 +207,7 @@ export async function createUser(
   let email = (input.email ?? '').trim().toLowerCase();
   const designation = input.designation?.trim() || null;
   const signatureChangeable = input.signatureChangeable !== false ? 1 : 0;
+  const blockSendersEnabled = input.blockSendersEnabled !== false ? 1 : 0;
 
   if (input.newMailbox) {
     const domain = await first<{ id: number; name: string }>(env.DB, 'SELECT id, name FROM domains WHERE id = ?', input.newMailbox.domainId);
@@ -239,8 +243,8 @@ export async function createUser(
   try {
     await env.DB.batch([
       env.DB.prepare(
-        'INSERT INTO users (id, email, name, password_hash, role, must_change_password, created_at, alternate_email, storage_quota, designation, signature_changeable) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)',
-      ).bind(userId, email, input.name.trim(), await hashPassword(password), input.role, now, altEmail, quota, designation, signatureChangeable),
+        'INSERT INTO users (id, email, name, password_hash, role, must_change_password, created_at, alternate_email, storage_quota, designation, signature_changeable, block_senders_enabled) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)',
+      ).bind(userId, email, input.name.trim(), await hashPassword(password), input.role, now, altEmail, quota, designation, signatureChangeable, blockSendersEnabled),
       ...statements,
       auditStmt(env.DB, { userId: actor.id, action: 'user.created', target: email, details: { role: input.role, alternateEmail: altEmail, designation }, ip }),
     ]);
@@ -278,6 +282,7 @@ export async function updateUser(
     storageQuota?: number | null;
     designation?: string | null;
     signatureChangeable?: boolean;
+    blockSendersEnabled?: boolean;
   },
   ip: string,
 ): Promise<void> {
@@ -289,10 +294,11 @@ export async function updateUser(
   const storageQuota = patch.storageQuota !== undefined ? patch.storageQuota : (u.storage_quota ?? null);
   const designation = patch.designation !== undefined ? (patch.designation?.trim() || null) : (u.designation ?? null);
   const signatureChangeable = patch.signatureChangeable !== undefined ? (patch.signatureChangeable ? 1 : 0) : (u.signature_changeable !== 0 ? 1 : 0);
+  const blockSendersEnabled = patch.blockSendersEnabled !== undefined ? (patch.blockSendersEnabled ? 1 : 0) : (u.block_senders_enabled !== 0 ? 1 : 0);
 
   try {
     await env.DB.batch([
-      env.DB.prepare('UPDATE users SET name = ?, role = ?, status = ?, email = ?, alternate_email = ?, storage_quota = ?, designation = ?, signature_changeable = ? WHERE id = ?').bind(
+      env.DB.prepare('UPDATE users SET name = ?, role = ?, status = ?, email = ?, alternate_email = ?, storage_quota = ?, designation = ?, signature_changeable = ?, block_senders_enabled = ? WHERE id = ?').bind(
         patch.name?.trim() ?? u.name,
         patch.role ?? u.role,
         patch.status ?? u.status,
@@ -301,6 +307,7 @@ export async function updateUser(
         storageQuota,
         designation,
         signatureChangeable,
+        blockSendersEnabled,
         id,
       ),
       ...(patch.status === 'disabled' ? [env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id)] : []),

@@ -13,6 +13,7 @@ export interface SessionUser {
   storageQuota?: number | null;
   designation?: string | null;
   signatureChangeable?: boolean;
+  blockSendersEnabled?: boolean;
 }
 
 export interface SessionInfo {

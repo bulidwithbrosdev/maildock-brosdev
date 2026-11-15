@@ -812,8 +812,53 @@ admin.get('/blocked', async (c) => {
 
 admin.post('/blocked', async (c) => {
   const input = await body(c, blockSchema);
-  await run(c.env.DB, 'INSERT INTO blocked_senders (id, mailbox_id, pattern, created_at) VALUES (?, ?, ?, ?)', newId(), input.mailboxId ?? null, input.pattern.toLowerCase(), Date.now());
-  return c.json({ ok: true });
+  const rawList: string[] = [];
+  if (input.pattern) rawList.push(input.pattern);
+  if (input.patterns) rawList.push(...input.patterns);
+
+  const normalized: string[] = [];
+  for (const raw of rawList) {
+    const parts = raw.split(/[\r\n,;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+    for (const p of parts) {
+      if (p.startsWith('@')) {
+        if (p.length > 2 && p.includes('.')) normalized.push(p);
+      } else if (p.includes('@')) {
+        normalized.push(p);
+      } else if (p.includes('.')) {
+        normalized.push(`@${p}`);
+      }
+    }
+  }
+
+  const unique = [...new Set(normalized)];
+  if (!unique.length) throw badRequest('No valid email address or @domain provided.');
+
+  const now = Date.now();
+  const mailboxId = input.mailboxId ?? null;
+
+  const existing = await all<{ pattern: string }>(
+    c.env.DB,
+    mailboxId
+      ? 'SELECT pattern FROM blocked_senders WHERE mailbox_id = ?'
+      : 'SELECT pattern FROM blocked_senders WHERE mailbox_id IS NULL',
+    ...(mailboxId ? [mailboxId] : []),
+  );
+  const existingSet = new Set(existing.map((e) => e.pattern.toLowerCase()));
+  const toInsert = unique.filter((p) => !existingSet.has(p));
+
+  if (toInsert.length > 0) {
+    const stmts = toInsert.map((p) =>
+      c.env.DB.prepare('INSERT INTO blocked_senders (id, mailbox_id, pattern, created_at) VALUES (?, ?, ?, ?)').bind(
+        newId(),
+        mailboxId,
+        p,
+        now,
+      ),
+    );
+    await c.env.DB.batch(stmts);
+  }
+
+  return c.json({ ok: true, added: toInsert.length, total: unique.length, patterns: toInsert });
 });
 
 admin.delete('/blocked/:id', async (c) => {

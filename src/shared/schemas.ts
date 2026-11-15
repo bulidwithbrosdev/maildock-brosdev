@@ -47,6 +47,7 @@ export const createUserSchema = z.object({
   storageQuota: z.number().int().min(0).max(1_000_000_000).optional().nullable(),
   designation: z.string().trim().max(100).optional().nullable(),
   signatureChangeable: z.boolean().optional(),
+  blockSendersEnabled: z.boolean().optional(),
   newMailbox: z.object({ localPart: z.string().trim().min(1).max(64), domainId: id }).nullable().optional(),
   mailboxIds: z.array(id).max(100).optional(),
   password: z.string().max(256).optional(),
@@ -62,6 +63,7 @@ export const updateUserSchema = z.object({
   storageQuota: z.number().int().min(0).max(1_000_000_000).optional().nullable(),
   designation: z.string().trim().max(100).optional().nullable(),
   signatureChangeable: z.boolean().optional(),
+  blockSendersEnabled: z.boolean().optional(),
 });
 
 export const sendInvitationSchema = z.object({
@@ -207,6 +209,10 @@ export const filterSchema = z.object({
 });
 
 export const noteSchema = z.object({ body: z.string().trim().min(1).max(5000) });
-export const blockSchema = z.object({ pattern: z.string().trim().min(3).max(254), mailboxId: id.nullable().optional() });
+export const blockSchema = z.object({
+  pattern: z.string().trim().min(2).max(254).optional(),
+  patterns: z.array(z.string().trim().min(2).max(254)).optional(),
+  mailboxId: id.nullable().optional(),
+});
 export const destinationSchema = z.object({ email: z.string().trim().email().max(254) });
 export const trustedSenderSchema = z.object({ pattern: z.string().trim().min(3).max(254) });

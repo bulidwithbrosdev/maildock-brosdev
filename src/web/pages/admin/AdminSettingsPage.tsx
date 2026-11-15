@@ -1,13 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Ban, Key, Plus, Settings, X } from 'lucide-react';
+import { Ban, Key, Plus, Search, Settings, X } from 'lucide-react';
 import { del, get, patch, post } from '../../lib/api';
 import { timeAgo } from '../../lib/format';
 import { useAction, useInvalidate } from '../../lib/hooks';
 import { Button, IconButton } from '../../components/ui/button';
-import { Field, Input, Select } from '../../components/ui/form';
-import { Alert, Card, CardHeader, PageHeader, PageSpinner, StatusPill } from '../../components/ui/misc';
-import { ConfirmDialog } from '../../components/ui/overlay';
+import { Field, Input, Select, Textarea } from '../../components/ui/form';
+import { Alert, Badge, Card, CardHeader, PageHeader, PageSpinner, StatusPill } from '../../components/ui/misc';
+import { ConfirmDialog, Dialog, useToast } from '../../components/ui/overlay';
+import type { MailboxAdmin } from '../../lib/types';
 
 interface InstanceSettings {
   instanceName: string;
@@ -175,42 +176,265 @@ function ForwardingSettings() {
 }
 
 function BlockedSenders() {
+  const toast = useToast();
   const q = useQuery({ queryKey: ['admin', 'blocked'], queryFn: () => get<{ id: number; pattern: string; address: string | null; created_at: number }[]>('/admin/blocked') });
+  const mailboxesQuery = useQuery({ queryKey: ['admin', 'mailboxes'], queryFn: () => get<MailboxAdmin[]>('/admin/mailboxes') });
   const [pattern, setPattern] = useState('');
-  const { run } = useAction();
+  const [mailboxId, setMailboxId] = useState<number | ''>('');
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [filter, setFilter] = useState('');
+  const { run, busy } = useAction();
+
+  const mailboxes = mailboxesQuery.data ?? [];
+  const list = q.data ?? [];
+  const filtered = list.filter((b) => {
+    if (!filter.trim()) return true;
+    const f = filter.trim().toLowerCase();
+    return b.pattern.toLowerCase().includes(f) || (b.address && b.address.toLowerCase().includes(f));
+  });
+
   return (
     <Card>
-      <CardHeader title="Blocked senders" description="Mail from these addresses or @domains is rejected." />
+      <CardHeader
+        title="Blocked senders"
+        description="Mail from these addresses or @domains is rejected."
+        action={
+          <div className="flex items-center gap-2">
+            {list.length > 0 && (
+              <Badge tone="neutral" pill>
+                {list.length} {list.length === 1 ? 'rule' : 'rules'}
+              </Badge>
+            )}
+            <Button
+              size="xs"
+              variant="secondary"
+              icon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => setBulkOpen(true)}
+            >
+              Bulk add
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Single Add Form */}
       <form
-        className="flex gap-2 border-b border-border px-5 py-3.5"
+        className="flex flex-wrap gap-2 border-b border-border px-5 py-3"
         onSubmit={(e) => {
           e.preventDefault();
           run('add', () =>
-            post('/admin/blocked', { pattern }).then(() => {
+            post('/admin/blocked', {
+              pattern: pattern.trim(),
+              mailboxId: mailboxId ? Number(mailboxId) : null,
+            }).then(() => {
               setPattern('');
+              toast.success('Blocked sender rule added');
               q.refetch();
             }),
           );
         }}
       >
-        <Input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="spammer@example.com or @example.com" required aria-label="Address or domain to block" />
-        <Button type="submit" className="h-9">
+        <div className="flex-1 min-w-[180px]">
+          <Input
+            value={pattern}
+            onChange={(e) => setPattern(e.target.value)}
+            placeholder="spammer@example.com or @example.com"
+            required
+            aria-label="Address or domain to block"
+          />
+        </div>
+        {mailboxes.length > 0 && (
+          <div className="w-[170px]">
+            <Select
+              value={mailboxId}
+              onChange={(e) => setMailboxId(e.target.value ? Number(e.target.value) : '')}
+              aria-label="Select inbox scope"
+            >
+              <option value="">Every inbox (all users)</option>
+              {mailboxes.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.address}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+        <Button type="submit" loading={busy === 'add'} className="h-9">
           Block
         </Button>
       </form>
-      {q.data?.length === 0 && <div className="px-5 py-5 text-center text-[13px] text-muted">Nobody is blocked.</div>}
-      {q.data?.map((b) => (
-        <div key={b.id} className={row}>
-          <Ban className="h-3.5 w-3.5 shrink-0 text-faint" />
-          <span className="min-w-0 flex-1 truncate">
-            <span className="font-mono text-[12.5px]">{b.pattern}</span> <span className="text-xs text-faint">{b.address ? `for ${b.address}` : 'for every inbox'}</span>
-          </span>
-          <button type="button" className="text-[12.5px] text-muted hover:text-fg" onClick={() => run('rm', () => del(`/admin/blocked/${b.id}`).then(() => q.refetch()))}>
-            Remove
-          </button>
+
+      {/* Search Filter if list is long */}
+      {list.length > 5 && (
+        <div className="border-b border-border px-5 py-2">
+          <div className="flex h-8 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs text-muted focus-within:border-primary">
+            <Search className="h-3.5 w-3.5 text-faint" />
+            <input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter blocked senders"
+              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-faint"
+            />
+            {filter && (
+              <button type="button" onClick={() => setFilter('')} className="text-faint hover:text-fg">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
-      ))}
+      )}
+
+      {list.length === 0 && <div className="px-5 py-6 text-center text-[13px] text-muted">Nobody is blocked.</div>}
+      {list.length > 0 && filtered.length === 0 && (
+        <div className="px-5 py-6 text-center text-[13px] text-muted">No blocked senders match “{filter}”.</div>
+      )}
+
+      <div className="scroll-thin max-h-[380px] overflow-y-auto">
+        {filtered.map((b) => (
+          <div key={b.id} className={row}>
+            <Ban className="h-3.5 w-3.5 shrink-0 text-danger" />
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-mono font-medium text-[12.5px] text-fg">{b.pattern}</span>{' '}
+              <span className="text-xs text-faint">{b.address ? `for ${b.address}` : 'for every inbox'}</span>
+            </span>
+            <span className="text-[11px] text-faint shrink-0">{timeAgo(b.created_at)}</span>
+            <button
+              type="button"
+              disabled={busy === `rm-${b.id}`}
+              className="text-[12.5px] text-muted hover:text-danger hover:underline ml-2"
+              onClick={() => run(`rm-${b.id}`, () => del(`/admin/blocked/${b.id}`).then(() => q.refetch()))}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {bulkOpen && (
+        <BulkBlockDialog
+          mailboxes={mailboxes}
+          onClose={() => setBulkOpen(false)}
+          onAdded={() => {
+            q.refetch();
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+function BulkBlockDialog({
+  mailboxes,
+  onClose,
+  onAdded,
+}: {
+  mailboxes: MailboxAdmin[];
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const toast = useToast();
+  const [text, setText] = useState('');
+  const [mailboxId, setMailboxId] = useState<number | ''>('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const parsedList = useMemo(() => {
+    const raw = text.split(/[\r\n,;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const valid: string[] = [];
+    for (const p of raw) {
+      if (p.startsWith('@')) {
+        if (p.length > 2 && p.includes('.')) valid.push(p);
+      } else if (p.includes('@')) {
+        valid.push(p);
+      } else if (p.includes('.')) {
+        valid.push(`@${p}`);
+      }
+    }
+    return [...new Set(valid)];
+  }, [text]);
+
+  const submit = async () => {
+    if (parsedList.length === 0) {
+      setError('Please enter at least one valid email address or domain.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const res = await post<{ ok: boolean; added: number; total: number }>('/admin/blocked', {
+        patterns: parsedList,
+        mailboxId: mailboxId ? Number(mailboxId) : null,
+      });
+      toast.success(`Added ${res.added} blocked sender rules (${res.total} processed)`);
+      onAdded();
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add blocked senders');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Block senders in bulk"
+      description="Paste email addresses or domains to reject. One per line or comma-separated."
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            disabled={parsedList.length === 0}
+            onClick={submit}
+          >
+            Block {parsedList.length > 0 ? `${parsedList.length} senders` : 'senders'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3.5 text-[13px]">
+        {error && <Alert tone="danger">{error}</Alert>}
+
+        {mailboxes.length > 0 && (
+          <Field label="Target scope" hint="Choose whether to block for all inboxes or a specific one.">
+            <Select
+              value={mailboxId}
+              onChange={(e) => setMailboxId(e.target.value ? Number(e.target.value) : '')}
+            >
+              <option value="">Every inbox (all users)</option>
+              {mailboxes.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.address}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+
+        <Field
+          label="Emails and @domains"
+          hint="Domains can be entered as @example.com or example.com. Full emails as user@example.com."
+        >
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={8}
+            className="font-mono text-xs"
+            placeholder={`spammer@domain.com\n@phishing-site.org\nbad-network.com\nabuse@junk.net`}
+            autoFocus
+          />
+        </Field>
+
+        <div className="flex items-center justify-between text-xs text-muted">
+          <span>Detected: <strong className="text-fg">{parsedList.length}</strong> valid patterns</span>
+          {parsedList.length > 0 && (
+            <span className="text-success font-medium">Ready to block</span>
+          )}
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

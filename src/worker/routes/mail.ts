@@ -444,7 +444,7 @@ mail.post('/blocked', async (c) => {
   const input = await body(c, blockSchema);
   if (input.mailboxId) await assertMailbox(c.env.DB, user, input.mailboxId);
   else if (user.role === 'member') throw forbidden('Only admins can block senders for every mailbox.');
-  const pattern = input.pattern.toLowerCase();
+  const pattern = (input.pattern || input.patterns?.[0] || '').toLowerCase().trim();
   if (!/^[^\s@]*@[^\s@]+\.[^\s@]+$/.test(pattern)) throw badRequest('Enter an address or @domain.');
   await run(c.env.DB, 'INSERT INTO blocked_senders (id, mailbox_id, pattern, created_at) VALUES (?, ?, ?, ?)', newId(), input.mailboxId ?? null, pattern, Date.now());
   return c.json({ ok: true });

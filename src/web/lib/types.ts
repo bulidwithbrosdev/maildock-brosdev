@@ -26,6 +26,7 @@ export interface SessionUser {
   storageQuota?: number | null;
   designation?: string | null;
   signatureChangeable?: boolean;
+  blockSendersEnabled?: boolean;
 }
 
 export interface Label {
@@ -231,6 +232,7 @@ export interface UserSummary {
   storageQuota?: number | null;
   designation?: string | null;
   signatureChangeable?: boolean;
+  blockSendersEnabled?: boolean;
   invitationStatus?: 'none' | 'manual' | 'pending' | 'sent' | 'accepted' | 'expired' | 'failed';
   lastInvitationSentAt?: number | null;
 }

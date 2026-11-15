@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, AtSign, CircleCheck, Clock, Copy, Crown, Eye, EyeOff, KeyRound, LoaderCircle, Mail, PenLine, RotateCw, Search, ShieldCheck, ShieldOff, UserCheck, UserPlus, UsersRound, UserX } from 'lucide-react';
+import { ArrowLeft, AtSign, Ban, CircleCheck, Clock, Copy, Crown, Eye, EyeOff, KeyRound, LoaderCircle, Mail, PenLine, RotateCw, Search, ShieldCheck, ShieldOff, UserCheck, UserPlus, UsersRound, UserX } from 'lucide-react';
 import { del, get, patch, post, put, errorText } from '../../lib/api';
 import { timeAgo } from '../../lib/format';
 import { useAction, useInvalidate } from '../../lib/hooks';
@@ -282,6 +282,7 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
   const [storageQuota, setStorageQuota] = useState(user.storageQuota !== null && user.storageQuota !== undefined ? String(user.storageQuota) : '');
   const [designation, setDesignation] = useState(user.designation || '');
   const [signatureChangeable, setSignatureChangeable] = useState(user.signatureChangeable !== false);
+  const [blockSendersEnabled, setBlockSendersEnabled] = useState(user.blockSendersEnabled !== false);
   const [role, setRole] = useState<'member' | 'admin'>(user.role === 'admin' ? 'admin' : 'member');
   const [secret, setSecret] = useState<{ id?: number; name: string; email: string; password?: string; alternateEmail?: string | null; credentialsSent?: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -385,6 +386,7 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
                         storageQuota: storageQuota ? Number(storageQuota) : null,
                         designation: designation.trim() || null,
                         signatureChangeable,
+                        blockSendersEnabled,
                         ...(isOwner ? {} : { role }),
                       }).then(refresh),
                     'User updated',
@@ -522,6 +524,27 @@ function UserDetail({ user, users }: { user: UserSummary; users: UserSummary[] }
                 label="Allow editing signature"
               />
             </div>
+          </SecurityRow>
+
+          <SecurityRow
+            icon={<Ban />}
+            label="Blocked senders"
+            value={blockSendersEnabled ? 'Enforced' : 'Bypassed'}
+            tone={blockSendersEnabled ? 'success' : undefined}
+          >
+            <Switch
+              checked={blockSendersEnabled}
+              disabled={busy === 'block-senders-toggle'}
+              onChange={(val) => {
+                setBlockSendersEnabled(val);
+                run(
+                  'block-senders-toggle',
+                  () => patch(`/admin/users/${user.id}`, { blockSendersEnabled: val }).then(refresh),
+                  val ? 'Blocked senders enforced for user' : 'Blocked senders bypassed for user',
+                );
+              }}
+              label="Enforce blocked senders"
+            />
           </SecurityRow>
 
           <SecurityRow icon={<KeyRound />} label="Password" value={user.mustChangePassword ? 'Temporary' : 'Set'}>
@@ -952,6 +975,7 @@ function CreateUserDialog({
   const [alternateEmail, setAlternateEmail] = useState('');
   const [designation, setDesignation] = useState('');
   const [signatureChangeable, setSignatureChangeable] = useState(true);
+  const [blockSendersEnabled, setBlockSendersEnabled] = useState(true);
   const [authMethod, setAuthMethod] = useState<'invite' | 'manual'>('invite');
   const [password, setPassword] = useState(() => generateRandomPassword());
   const [showPassword, setShowPassword] = useState(false);
@@ -987,6 +1011,7 @@ function CreateUserDialog({
         storageQuota: storageQuota ? Number(storageQuota) : null,
         designation: designation.trim() || null,
         signatureChangeable,
+        blockSendersEnabled,
         newMailbox: mode === 'new' ? { localPart: localPart || suggested, domainId: domain?.id } : null,
         mailboxIds: shared,
         password: password.trim(),
@@ -1165,6 +1190,16 @@ function CreateUserDialog({
               <div className="text-xs text-muted">{signatureChangeable ? 'Employee can customize their own signature' : 'Company signature template is locked and enforced centrally'}</div>
             </div>
             <Switch checked={signatureChangeable} onChange={setSignatureChangeable} label="Signature changeable" />
+          </div>
+        </Field>
+
+        <Field label="Blocked senders protection" hint="Whether rejected senders and domain rules apply to this user's mail.">
+          <div className="flex items-center justify-between rounded-lg border border-border bg-surface px-3.5 py-2.5">
+            <div className="min-w-0 pr-3">
+              <div className="text-[13px] font-medium text-fg">{blockSendersEnabled ? 'Enforced' : 'Bypassed'}</div>
+              <div className="text-xs text-muted">{blockSendersEnabled ? 'Mail from blocked senders or @domains will be rejected' : 'User receives all mail, bypassing blocked senders list'}</div>
+            </div>
+            <Switch checked={blockSendersEnabled} onChange={setBlockSendersEnabled} label="Enforce blocked senders" />
           </div>
         </Field>
 
